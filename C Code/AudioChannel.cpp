@@ -65,17 +65,17 @@ AudioChannel::AudioChannel(){
 	magFlag = false;
 	centroidFlag = false;
 	centroidVal = 0;
-	filterLen = 0;  //make obsolete
+	filterLen = 0;  
 	filterProcessing = 0;
+	filterFFTSize = 0;
 	
 }
-
 AudioChannel::~AudioChannel() {
 
-	sprintf(out, "destroying AudioChannel \n"); DISP(out);
 	free(inAudioFrame);
 	free(outAudioFrame);
 	free(fftFrame);
+	free(fftOut);
 	free(freqData);
 	free(magSpectrum);
 	free(spectrumPrev);
@@ -87,33 +87,6 @@ AudioChannel::~AudioChannel() {
 	delete [] micPosition;
 	delete [] inBuffer;
 	delete [] outBuffer;
-}
-
-
-/*
- Group: Utilities
- 
- Function: clearFFTFrame()
- 
- Clears the fftFrame buffer, which has the FFT dta.
- 
- */
-void AudioChannel::clearFFTFrame(){
-	
-	//not sure why memset isn't working here, so we use a loop
-	int i;
-	for(i = 0; i < fftSize; i++){ fftFrame[i] = 0;}
-}
-/*
- Function: clearInAudioFrame()
- 
- Clears the inAudioFrame buffer that is the only buffer that can be read and written to by C++ and Actionscript. This function
- should be called when not writing a full frame as samples from the previous frame may remain and introduce error into 
- calculations that are performed.
- 
-*/
-void AudioChannel::clearInAudioFrame(){
-	memset(inAudioFrame, 0, hopSize*sizeof(float));
 }
 /* 
  Function: initChannel()
@@ -138,18 +111,18 @@ void AudioChannel::initChannel(int _hopSize, int _fftSize, int _fs) {
 	else{ audioOutputSize = hopSize; }	
 	inAudioFrame = (float*) malloc(sizeof(float)*(fftSize + 2));		// We initialize this to be 2 larger for the weird fftPacking thing
 	outAudioFrame = (float*) malloc(sizeof(float)*4096);				// Maxsamplesize is the max number of samples flash can playback
-	fftFrame = (float*) malloc(sizeof(float)*(fftSize + 2));
+	fftFrame = (float*) malloc(sizeof(float)*(fftSize*2));
+	fftOut = (float*) malloc(sizeof(float)*(fftSize*2));
+	twiddle = (float*) malloc(sizeof(float)*(fftSize));
+	invTwiddle = (float*) malloc(sizeof(float)*(fftSize));	
 	freqData = (float*) malloc(sizeof(float)*(fftSize/2 + 1));			// Number of unique frequencies in the specific fftLength
 	magSpectrum = (float*) malloc(sizeof(float)*(fftSize/2 + 1));		// Number of unique magnitudes ""			""
 	spectrumPrev = (float *) calloc((fftSize/2 + 1),sizeof(float));
 	hannCoefficients = (float *) malloc(sizeof(float)*fftSize*2);
+	filterTwiddle = (float *) calloc(16384, sizeof(float));
+	filterInvTwiddle = (float *) calloc(16384, sizeof(float));
+	filterLen = 0;
 	
-	// These are the pointers that ActionScript will see. We use these instead of inAudioFrame and outAudioFrame
-	// since a call to reInitAudioChannel may change inAudioFrame and outAudioFrame but we then just copy the 
-	// value to inRefPtr and outRefPtr to prevent giving Actionscript new pointers to keep track of.
-	//*inRefPtr = inAudioFrame;
-	//outRefPtr = outAudioFrame;
-		
 	roomSize = new float[3];
 	sourcePosition = new float[3];
 	micPosition = new float[3];
@@ -164,10 +137,7 @@ void AudioChannel::initChannel(int _hopSize, int _fftSize, int _fs) {
 	outBuffer = new CircularBuffer[1];
 	outBuffer->initBuffer(buffSize);
 	
-//	sprintf(out, "===== AudioChannel::initChannel ====="); DISP(out);
-//	sprintf(out, "inBuffer: %i", inBuffer); DISP(out);
-//	sprintf(out, "fftSize = %i hopSize = %i fs = %i audioOutputSize = %i", fftSize, hopSize, fs, audioOutputSize); DISP(out);
-	
+	// Initialize flags/values		
 	inAudioFrameSamples = 0;
 	outAudioFrameSamples = 0;
 	circularBufferFlag = false;
@@ -197,48 +167,69 @@ void AudioChannel::reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh)
 	hopSize = _hopSize;
 	fs = _fs;
 	
-//	sprintf(out, "in reInitChannel: fs = %i, hopSize = %i, fftSize = %i", fs, hopSize, fftSize); DISP(out);	
-//	sprintf(out, "inAudioFramePtr: %i\n fftFramePtr: %i\n freqDataPtr: %i\n magSpectrumPtr: %i\n spectrumPrevPtr: %i\n hannCoefPtr: %i\n",
-//			inAudioFrame, fftFrame, freqData, magSpectrum, spectrumPrev, hannCoefficients); DISP(out);
 	if(hopSize < 2048){ audioOutputSize = 2*hopSize;} // = 2048 b/c this is the least # of samples flash can play at once
 	else{ audioOutputSize = hopSize; }	
-	//inAudioFrame = (float*) realloc(sizeof(float)*(fftSize + 2));		// We initialize this to be 2 larger for the weird fftPacking thing
+		
+	// Reallocate memory because we have changed sample or frame rate	
 	free(inAudioFrame);
-//	inAudioFrame = (float *)realloc(inAudioFrame, sizeof(float)*(fftSize + 2));
 	inAudioFrame = (float *) calloc(2*hopSize, sizeof(float));
-	fftFrame = (float *)realloc(fftFrame, sizeof(float)*(fftSize + 2));
+	fftFrame = (float *)realloc(fftFrame, sizeof(float)*(fftSize*2));
+	fftOut = (float *)realloc(fftOut, sizeof(float)*(fftSize*2));
+	twiddle = (float*) realloc(twiddle, sizeof(float)*(fftSize));
+	invTwiddle = (float*) realloc(invTwiddle, sizeof(float)*(fftSize));	
 	freqData = (float *)realloc(freqData, sizeof(float)*(fftSize/2 + 1));
 	magSpectrum = (float *)realloc(magSpectrum, sizeof(float)*(fftSize/2 + 1))	;
 	spectrumPrev = (float *)realloc(spectrumPrev, (fftSize/2 + 1)*sizeof(float));	
 	hannCoefficients = (float *)realloc(hannCoefficients, sizeof(float)*fftSize*2);	
-	
-//	sprintf(out, "inAudioFramePtr: %i\n fftFramePtr: %i\n freqDataPtr: %i\n magSpectrumPtr: %i\n spectrumPrevPtr: %i\n hannCoefPtr: %i\n",
-//			&inAudioFrame[0], fftFrame, freqData, magSpectrum, spectrumPrev, hannCoefficients); DISP(out);
-	
+	filterLen = 0;
+	filterFFTSize = 0;
+
+	// Clear previous spectrum array
 	int i;
 	for(i = 0; i < (fftSize/2 + 1); i++){
 		spectrumPrev[i] = 0;
 	}
-	
+
+	// Ensure a new room will be created when reverb is called
+	newRoom = true;
+	echoStrength = NULL;	
+
+	// Set the proper number of channels
 	if(numCh == 1){stereo = false;}
 	else if(numCh == 2){stereo = true;}
 	else{sprintf(out, "Only Mono and Stereo files are supported!"); DISP(out);}
 
-//for(i = 0; i < 10; i++){
-//	sprintf(out, "inAudioFrame[%i] = %f", i, inAudioFrame[i]); DISP(out);
-//}
-//for(i = hopSize*2 - 10; i < hopSize*2; i++){
-//	sprintf(out, "inAudioFrame[%i] = %f", i, inAudioFrame[i]); DISP(out);
-//}
-//	memset(spectrumPrev, 0, (fftSize/2 + 1));
-//	fftFrame = (float*) realloc(sizeof(float)*(fftSize + 2));
-//	freqData = (float*) realloc(sizeof(float)*(fftSize/2 + 1));			// Number of unique frequencies in the specific fftLength
-//	magSpectrum = (float*) realloc(sizeof(float)*(fftSize/2 + 1));		// Number of unique magnitudes ""			""
-//	spectrumPrev = (float *) calloc((fftSize/2 + 1),sizeof(float));
-//	hannCoefficients = (float *) remalloc(sizeof(float)*fftSize*2);
-	
 	clearInAudioFrame();
-	// inRefPtr = inAudioFrame;
+
+}
+
+/*
+ Group: Utilities
+ 
+ Function: clearFFTFrame()
+ 
+ Clears the fftFrame buffer, which has the FFT dta.
+ 
+ */
+void AudioChannel::clearFFTFrame(){
+	
+	// Not sure why memset isn't working here, so we use a loop
+	int i;
+	for(i = 0; i < 2*fftSize; i++){ 
+		fftFrame[i] = 0;
+		fftOut[i] = 0;
+	}
+}
+/*
+ Function: clearInAudioFrame()
+ 
+ Clears the inAudioFrame buffer that is the only buffer that can be read and written to by C++ and Actionscript. This function
+ should be called when not writing a full frame as samples from the previous frame may remain and introduce error into 
+ calculations that are performed.
+ 
+*/
+void AudioChannel::clearInAudioFrame(){
+	memset(inAudioFrame, 0, hopSize*sizeof(float));
 }
 /*
  Function: getCentroidVal()
@@ -303,11 +294,14 @@ int AudioChannel::getOutAudioFrameSamples(){return outAudioFrameSamples;}
 /*
 	Funciton: resetChannel
 	
-	Parameters:
+	Resets the buffers and flags in the channel.
+	
+	See Also:
+	
+	<DATF.endOfFile>
 */
 void AudioChannel::resetChannel(){
 
-	sprintf(out, "resetChannel in AudioChannel"); DISP(out);
 	inBuffer->resetBuffer();
 	outBuffer->resetBuffer();
 	clearInAudioFrame();
@@ -325,7 +319,7 @@ void AudioChannel::resetChannel(){
  
  Parameters:
  
- *val: a float specifying the centroid value of the current frame
+ val - A float specifying the centroid value of the current frame
  */
 void AudioChannel::setCentroidVal(float val) {centroidVal = val;}
 /*
@@ -335,7 +329,7 @@ void AudioChannel::setCentroidVal(float val) {centroidVal = val;}
  
  Parameters:
  
- *name: a pointer for the character array containing the desired name of the channel
+ name - a pointer for the character array containing the desired name of the channel
  */
 void AudioChannel::setChannelName(char name[]) {
 	int i;
@@ -348,7 +342,7 @@ void AudioChannel::setChannelName(char name[]) {
  
  Parameters:
  
- *hop: An int which is the new hopSize
+ hop - An int which is the new hopSize
  */
 void AudioChannel::setHopSize(int hop){
 	hopSize = hop;
@@ -360,7 +354,7 @@ void AudioChannel::setHopSize(int hop){
  
  Returns:
  
- * _fs - the audio sampling rate
+ _fs - the audio sampling rate
  */
 int AudioChannel::setSampleRate(int _fs) { fs = _fs;}
 /*
@@ -370,7 +364,7 @@ int AudioChannel::setSampleRate(int _fs) { fs = _fs;}
  
  Parameters:
  
- * numSamples: an int specifying the number of samples in the buffer
+ numSamples - an int specifying the number of samples in the buffer
  
  */
 void AudioChannel::setAudioFrameSamples(int numSamples) {inAudioFrameSamples = numSamples;}
@@ -381,19 +375,38 @@ void AudioChannel::setAudioFrameSamples(int numSamples) {inAudioFrameSamples = n
  
  Parameters:
  
- * numSamples: an int specifying the number of samples in the buffer
+ numSamples - an int specifying the number of samples in the buffer
  
  */
 void AudioChannel::setOutAudioFrameSamples(int numSamples) {outAudioFrameSamples = numSamples;}
 
-
-
-
+/*
+ Function: setRoom()
+ 
+ Sets the parameters to the room impulse response function. These are saved on each frame and compared
+ to the last frame when reverb is in use. If the parameters are the same then no RIR will be calculated.
+ 
+ Parameters:
+ 
+ 	newRoomLength - A float that is the new room length.
+	newRoomWidth - A float that is the new room width.
+	newRoomHeight - A float that is the new room height.
+	newSourceLength - A float that is the new source x location.
+	newSourceWidth - A float that is the new source y location.
+	newSourceHeight - A float that is the new source z location. 
+	newMicLength - A float that is the new mic x location.
+	newMicWidth - A float that is the new mic y location.
+	newMicHeight - A float that is the new mic y location.
+	newEchoStrength - A double indicating the new echo strength.
+ 
+ See Also:
+ 
+ <checkRoom>, <DATF.reverb>
+ */
 void AudioChannel::setRoom(	float newRoomLength, float newRoomWidth, float newRoomHeight, 
 							float newSourceLength, float newSourceWidth, float newSourceHeight, 
 							float newMicLength, float newMicWidth, float newMicHeight, double newEchoStrength){
-	//sprintf(out, "\nSet Room"); DISP(out);
-	//sprintf(out, "sourceWidth = %4.15f, newSourceWidth = %4.15f", sourceWidth, newSourceWidth); DISP(out); 
+
 	roomLength = newRoomLength;
 	roomWidth = newRoomWidth;
 	roomHeight = newRoomHeight;
@@ -404,14 +417,40 @@ void AudioChannel::setRoom(	float newRoomLength, float newRoomWidth, float newRo
 	micWidth = newMicWidth;
 	micHeight = newMicHeight;
 	echoStrength = newEchoStrength;
-	//sprintf(out, "sourceWidth = %4.15f, newSourceWidth = %4.15f", sourceWidth, newSourceWidth); DISP(out);
+
 }
+
+/*
+ Function: setRoom()
+ 
+ This function checks if the parameters entered are the same as the ones stored in the audio channel.
+ 
+ Parameters:
+ 
+ 	newRoomLength - A float that is the new room length.
+	newRoomWidth - A float that is the new room width.
+	newRoomHeight - A float that is the new room height.
+	newSourceLength - A float that is the new source x location.
+	newSourceWidth - A float that is the new source y location.
+	newSourceHeight - A float that is the new source z location. 
+	newMicLength - A float that is the new mic x location.
+	newMicWidth - A float that is the new mic y location.
+	newMicHeight - A float that is the new mic y location.
+	newEchoStrength - A double indicating the new echo strength.
+	
+ Returns:
+ 
+	True if a new room impulse response must be calculated, false if the parameters entered are the same
+	as those in the channel.
+ 
+ See Also:
+ 
+ <checkRoom>, <DATF.reverb>
+ */
 bool AudioChannel::checkRoom(	float newRoomLength, float newRoomWidth, float newRoomHeight, 
 								float newSourceLength, float newSourceWidth, float newSourceHeight, 
 								float newMicLength, float newMicWidth, float newMicHeight, double newEchoStrength){
 	// See if parameters are the same
-	//sprintf(out, "\nCheck Room"); DISP(out);
-	//sprintf(out, "sourceWidth = %4.15f, newSourceWidth = %4.15f", sourceWidth, newSourceWidth); DISP(out);		
 	if(	(roomLength == newRoomLength) &&
 		(roomWidth == newRoomWidth) &&
 		(roomHeight == newRoomHeight) &&
@@ -424,24 +463,9 @@ bool AudioChannel::checkRoom(	float newRoomLength, float newRoomWidth, float new
 		(echoStrength == newEchoStrength) )
 	{
 		newRoom = false;
-		//sprintf(out, "false"); DISP(out);		
 	} else{
-		newRoom = true;
-		//sprintf(out, "true"); DISP(out);		
+		newRoom = true;	
 	}
-	//sprintf(out, "still in check room sourceWidth = %4.15f, newSourceWidth = %4.15f", sourceWidth, newSourceWidth); DISP(out);
-//	if(roomLength == newRoomLength){sprintf(out, "roomLengths are equal"); DISP(out);	}
-//	if(roomWidth == newRoomWidth){sprintf(out, "roomWidths are equal"); DISP(out);	}
-//	if(roomHeight == newRoomHeight){sprintf(out, "roomHeight are equal"); DISP(out);	}
-//	if(sourceLength == newSourceLength){sprintf(out, "sourceLengths are equal"); DISP(out);	}
-//	if(sourceWidth == newSourceWidth){sprintf(out, "sourceWidths are equal"); DISP(out);	}
-//	if(sourceHeight == newSourceHeight){sprintf(out, "sourceHeights are equal"); DISP(out);	}
-//	if(micLength == newMicLength){sprintf(out, "micLengths are equal"); DISP(out);	}
-//	if(micWidth == newMicWidth){sprintf(out, "micWidths are equal"); DISP(out);	}
-//	if(micHeight == newMicHeight){sprintf(out, "micHeights are equal"); DISP(out);	}
-//	if(echoStrength == newEchoStrength){sprintf(out, "echoStrengts are equal"); DISP(out);	}	
-	//sprintf(out, "still in check room sourceWidth = %4.15f, newSourceWidth = %4.15f", sourceWidth, newSourceWidth); DISP(out);	
-//	sprintf(out, "bools = %i %i %i", sourceLength == newSourceLength, sourceWidth == newSourceWidth, sourceHeight == newSourceHeight); DISP(out);
 	return newRoom;
 }
 /*

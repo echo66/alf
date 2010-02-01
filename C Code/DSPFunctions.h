@@ -17,11 +17,6 @@
 #ifndef DSPFUNCTIONS_H
 #define DSPFUNCTIONS_H
 
-extern void twofft(float data1[], float data2[], float fft1[], float fft2[], unsigned long n);
-extern void four1(float data[], unsigned long nn, int isign);
-void realft(float data[], unsigned long n, int isign);
-void unpackFFT(float data[], long dataLength);
-void repackFFT(float data[], long dataLength);
 void magSpectrum(float fft[], float FFT[], int fftLength, int useDB);
 float centroid(float spectrum[], float freq[], int frameSize, int fs);
 float intensity(float spectrum[], int winLength);
@@ -35,10 +30,18 @@ float flux(float spectrum[], float spectrumPrev[], int winLength);
 void iirFilter(float *input, float *output, int seqLen, float gain, float *numCoeffs, float *denomCoeffs, int numOrder, int denomOrder);
 float* rir(int fs, float refCo, float mic[], float room[], float src[], int rirLen[]);
 int nextPowerOf2(int number);
-void FFTHelper(float* x, int fftLength, float* X, float* scratch, float* twiddle, int twiddleLength);
-float* realFFT(float *x, int fftLength);
-float* FFT(float* x, int fftLength);
+
 void computeTwiddleFactors(float* twiddle, int N);
 void polarToComplex(float mag, float phase, float* ans);
+void polarToComplex(float mag, float phase, float* ans);
+void computeTwiddleFactors(float* twiddle, int N, float sign);
+void FFT(float* x, int fftLength, float* twiddles, float* output, int sign);
+void realFFT(float *x, int fftLength, float * twiddles, float* output, int sign);
+void FFTHelper(float* x, int fftLength, float* X, float* scratch, 
+        float* twiddle, int imagStart);
+void pack(float* data, int fftLength);
+void unpackFrequency(float* data, int fftLength);
+void unpackTime(float*data, int fftLength);
+
 
 #endif
