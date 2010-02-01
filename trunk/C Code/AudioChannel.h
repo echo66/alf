@@ -74,22 +74,22 @@ public:
 	//Other members
 	bool firstFrame, bufferReady, stereo, newRoom;
 	char *channelName;
+	int inAudioFrameSamples, outAudioFrameSamples;
 	
 	//Storage Data
-	float *fftFrame, *freqData, *magSpectrum;
+	float *fftFrame, *fftOut, *freqData, *magSpectrum, *twiddle, *invTwiddle;
 	float *spectrumPrev, *hannCoefficients, *inAudioFrame, *outAudioFrame;
 	float *roomSize, *sourcePosition, *micPosition;
 	float **inRefPtr, outRefPtr; 
 	
 	//Circular Buffers
 	CircularBuffer *outBuffer, *inBuffer;
-	
-	int inAudioFrameSamples, outAudioFrameSamples;
-	
-	// This stuff has to be either decprecated or revised
-	float* filter;					//a pointer to a filter to save an rir filter
-	int filterLen;					//these things need to be deprecated and/or changed
+		
+	// Filtering arrays/vars
+	float* filter, *filterTwiddle, *filterInvTwiddle;						
+	int filterLen, filterFFTSize;					
 	int filterProcessing;
+	
 };
 
 #endif
