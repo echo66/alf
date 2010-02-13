@@ -24,7 +24,11 @@ void hannWindow(float hann[], int winLength);
 float rolloff(float spectrum[], int winLength, int fs);
 float bandwidth(float spectrum[], float freq[], float centroid, int winLength, int fs);
 void getFreq(float freq[], int frameSize, int fs);
-int LPC(float *audioSeg, int audioLength, int order, float *lpCE, int numRows, int numCols);
+
+int LPC(float *corrData, int audioLength, int order, float *lpCE);
+
+void autoCorr(float *audioSeg, int fftSize, float *corrData, float* corrDataOut, float *twid,
+			  float *invTwid, float *halfTwid, float* invHalfTwid, float *scratch);
 void freqResp(float *lpCE, float *resp, int fftSize, int numRows, int numCols, int useDB);
 float flux(float spectrum[], float spectrumPrev[], int winLength);
 void iirFilter(float *input, float *output, int seqLen, float gain, float *numCoeffs, float *denomCoeffs, int numOrder, int denomOrder);
@@ -36,12 +40,11 @@ void polarToComplex(float mag, float phase, float* ans);
 void polarToComplex(float mag, float phase, float* ans);
 void computeTwiddleFactors(float* twiddle, int N, float sign);
 void FFT(float* x, int fftLength, float* twiddles, float* output, int sign);
-void realFFT(float *x, int fftLength, float * twiddles, float* output, int sign);
+void realFFT(float* x, float *output, int fftLength, float* twiddles, float* halfTwiddles, float* scratch, int sign);
 void FFTHelper(float* x, int fftLength, float* X, float* scratch, 
         float* twiddle, int imagStart);
 void pack(float* data, int fftLength);
 void unpackFrequency(float* data, int fftLength);
 void unpackTime(float*data, int fftLength);
-
 
 #endif

@@ -30,7 +30,6 @@ rm ALFpackage.o
 rm AudioChannel.o
 rm CircularBuffer.o
 rm DSPFunctions.o
-rm nrutil.o
 rm MathDoubleFuncs.o
 rm MathFloatFuncs.o
 
