@@ -66,28 +66,30 @@ DISP(outStr);\
 
 
 //function prototypes
-AS3_Val clearAudioFrame(void *self, AS3_Val args);
-AS3_Val initAudioChannel(void *self, AS3_Val args);
-AS3_Val performIFFT(void* self, AS3_Val args);
-AS3_Val getMagSpec(void *self, AS3_Val args);
-AS3_Val getFlux(void *self, AS3_Val args);
-AS3_Val getCentroid(void *self, AS3_Val args);
-AS3_Val getIntensity(void *self, AS3_Val args);
-AS3_Val getRolloff(void *self, AS3_Val args);
-AS3_Val getBandwidth(void *self, AS3_Val args);
-AS3_Val getLPC(void *self, AS3_Val args);
-AS3_Val getHarmonics(void *self, AS3_Val args);
-AS3_Val addReverb(void *self, AS3_Val args);
-AS3_Val checkOutputBuffer(void *self, AS3_Val args);
-AS3_Val resetFlags(void *self, AS3_Val args);
-AS3_Val resetAll(void *self, AS3_Val args);
 AS3_Val clearAudioBuffer(void *self, AS3_Val args);
-AS3_Val setInputBuffer(void *self, AS3_Val args);
-AS3_Val checkInputBuffer(void *self, AS3_Val args);
+AS3_Val clearAudioFrame(void *self, AS3_Val args);
+AS3_Val checkOutputBuffer(void *self, AS3_Val args);
+AS3_Val initAudioChannel(void *self, AS3_Val args);
 AS3_Val reInitializeChannel(void* self, AS3_Val args);
 AS3_Val getInAudioPtr(void *self, AS3_Val args);
+AS3_Val setInputBuffer(void *self, AS3_Val args);
+AS3_Val checkInputBuffer(void *self, AS3_Val args);
+AS3_Val resetFlags(void *self, AS3_Val args);
 AS3_Val setFirstFrame(void *self, AS3_Val args);
+AS3_Val resetAll(void *self, AS3_Val args);
 
+AS3_Val addReverb(void *self, AS3_Val args);
+AS3_Val getBandwidth(void *self, AS3_Val args);
+AS3_Val getCentroid(void *self, AS3_Val args);
+AS3_Val getFlux(void *self, AS3_Val args);
+AS3_Val getHarmonics(void *self, AS3_Val args);
+AS3_Val getIntensity(void *self, AS3_Val args);
+AS3_Val getLPC(void *self, AS3_Val args);
+AS3_Val getComplexSpectrum(void *self, AS3_Val args);
+AS3_Val getMagSpec(void *self, AS3_Val args);
+AS3_Val getRolloff(void *self, AS3_Val args);
+AS3_Val performIFFT(void* self, AS3_Val args);
+AS3_Val getFFTSize(void* self, AS3_Val args);
 
 //internal methods, not exposed to ActionScript
 void filter(AudioChannel *ch, float *fir, int firLength);
@@ -107,7 +109,7 @@ void computeCentroid(AudioChannel *ch);
 	
 	Parameters:
 	
-		*chPtr - a pointer to the audio channel containing the buffer to be cleared.
+		*chPtr - A pointer to the audio channel containing the buffer to be cleared.
 
 	See Also:
 	
@@ -132,7 +134,7 @@ AS3_Val clearAudioBuffer(void *self, AS3_Val args){
 	
 	Parameters: 
 	
-		*chPtr - a pointer to the audio channel containing the buffer to be cleared.
+		*chPtr - A pointer to the audio channel containing the buffer to be cleared.
 	
 	See Also:
 	
@@ -152,7 +154,7 @@ AS3_Val clearAudioFrame(void *self, AS3_Val args){
 /*
 	Function: checkOutputBuffer
 	
-	This function is called prior to playback in <ALF>. See the ALF documentation for the proper usage.
+	This function is called prior to playback in <ALF.as>. See the ALF documentation for the proper usage.
 	
 	If using a mono track, checkOutputBuffer will see if there are enough samples to play in the audio channel.
 	The buffer being used for playback will automatically be detected and the read and write pointers are 
@@ -161,12 +163,12 @@ AS3_Val clearAudioFrame(void *self, AS3_Val args){
 	
 	Parameters:
 	
-		*chPtr - a pointer to the audio channel containing the buffer to be cleared.
+		*chPtr - A pointer to the audio channel containing the buffer to be cleared.
 	
 	Returns:
 	
 		An Array with the first element the status of the buffer (1 for ready, 0 for not ready) and the second element 
-		isthe number of samples to be played.
+		is the number of samples to be played.
 */
 AS3_Val checkOutputBuffer(void *self, AS3_Val args) {
 	AudioChannel *chPtr;
@@ -189,26 +191,29 @@ AS3_Val checkOutputBuffer(void *self, AS3_Val args) {
 	int playReady = 0, bufferReady = 0;
 	bool dumpSamples = false;
 
-
 	if(chPtr->getCircularBufferFlag()) {
 		//This is the case where the circular buffer flag is in use
 
 		// DiffSamples tells us how many samples are available based on the read and write pointers
 		// of the output buffer
 		diffSamples = chPtr->outBuffer->getPtrDiff();
-		
-		
+
+		// We have samples to play
 		if(diffSamples > 0){
+		
+			// Must have between 2048 and 4096 samples to playback
 			if(diffSamples >= 2048 && diffSamples <= 4096) {
 				numSamplesToCopy = diffSamples;
 			} else if (diffSamples > 4096){
 				numSamplesToCopy = 4096;
 			}
 			else {
+				// Less than 2048 samples, if we are filtering, wait for next frame
 				if(chPtr->filterProcessing) {
 					numSamplesToCopy = 0;
 					dumpSamples = false;
 				}
+				// End of file
 				else{
 					numSamplesToCopy = 0;
 					dumpSamples = true;
@@ -216,6 +221,7 @@ AS3_Val checkOutputBuffer(void *self, AS3_Val args) {
 			}
 		}
 		
+		// Don't have any samples to play
 		if(diffSamples == 0) {
 			if(chPtr->filterProcessing){
 				numSamplesToCopy = 0;
@@ -251,7 +257,7 @@ AS3_Val checkOutputBuffer(void *self, AS3_Val args) {
 		chPtr->filterProcessing = 0;
 
 	}else {
-	
+
 		diffSamples = chPtr->inBuffer->getPtrDiff();
 		
 		if(diffSamples == 0){ //case where there are no more samples tocopy
@@ -296,7 +302,7 @@ AS3_Val checkOutputBuffer(void *self, AS3_Val args) {
 		}
 		
 		// Now we set AudioFrameSamples to 0 we are removing all the samples
-		chPtr->setAudioFrameSamples(0);		
+		chPtr->setAudioFrameSamples(0);				
 		
 	}
 	
@@ -333,7 +339,7 @@ AS3_Val checkOutputBuffer(void *self, AS3_Val args) {
 	
 	See Also:
 
-		<AudioChannel.cpp>
+		<AudioChannel.cpp->initChannel>
 */
 AS3_Val initAudioChannel(void *self, AS3_Val args) {
 		
@@ -357,12 +363,18 @@ AS3_Val initAudioChannel(void *self, AS3_Val args) {
 		// Initialize audio channel
 		leftCh->initChannel(hopSize, nextPowerOf2(frameSize), sampleRate);
 		getFreq(leftCh->freqData, leftCh->getFFTSize(), leftCh->getSampleRate());	// Compute frequency array for later usage
-		hannWindow(leftCh->hannCoefficients, leftCh->getFFTSize());					// Compute hann window for later usage
+		hannWindow(leftCh->hannCoefficients, 2*hopSize);							// Compute hann window for later usage
 		inAudPtr = &(chPtr->inAudioFrame[0]);										// Pointer to where Flash will write to
 		outAudPtr = &(chPtr->outAudioFrame[0]);										// Pointer to where Flash will read from
 		samplesPtr = &(chPtr->inAudioFrameSamples);									// Pointer for flash to r/w the number of samples
+		
+		// Compute twiddles for various size FFTs that may be computed
+		computeTwiddleFactors(chPtr->doubleTwiddle, chPtr->getFFTSize()*2, 1);		// 2x Twiddle factors for FFT computation
+		computeTwiddleFactors(chPtr->invDoubleTwiddle, chPtr->getFFTSize()*2, -1);	// 2x Twiddle for inverse FFT
 		computeTwiddleFactors(chPtr->twiddle, chPtr->getFFTSize(), 1);				// Twiddle factors for FFT computation
 		computeTwiddleFactors(chPtr->invTwiddle, chPtr->getFFTSize(), -1);			// Twiddle for inverse FFT
+		computeTwiddleFactors(chPtr->halfTwiddle, chPtr->getFFTSize()/2, 1);		// Twiddle factors for realFFT computation
+		computeTwiddleFactors(chPtr->invHalfTwiddle, chPtr->getFFTSize()/2, -1);	// Twiddle for inverse realFFT		
 		char name[] = "left";
 		chPtr->setChannelName(name);
 
@@ -374,13 +386,19 @@ AS3_Val initAudioChannel(void *self, AS3_Val args) {
 
 		// Initialize audio channel
 		rightCh->initChannel(hopSize, nextPowerOf2(frameSize), sampleRate);		
-		getFreq(rightCh->freqData, rightCh->getFFTSize(), rightCh->getSampleRate());		// Compute frequency array for later usage
-		hannWindow(rightCh->hannCoefficients, rightCh->getFFTSize());						// Compute hann window for later usage
-		inAudPtr = &(chPtr->inAudioFrame[0]);												// Pointer to where Flash will play from
-		outAudPtr = &(chPtr->outAudioFrame[0]);												// Pointer to where Flash will read from
-		samplesPtr = &(chPtr->inAudioFrameSamples);											// Pointer for flash to r/w the number of samples
-		computeTwiddleFactors(chPtr->twiddle, chPtr->getFFTSize(), 1);						// Twiddle factors for FFT computation
-		computeTwiddleFactors(chPtr->invTwiddle, chPtr->getFFTSize(), -1);					// Twiddle for inverse FFT
+		getFreq(rightCh->freqData, rightCh->getFFTSize(), rightCh->getSampleRate());	// Compute frequency array for later usage	
+		hannWindow(rightCh->hannCoefficients, 2*hopSize);								// Compute hann window for later usage
+		inAudPtr = &(chPtr->inAudioFrame[0]);											// Pointer to where Flash will play from
+		outAudPtr = &(chPtr->outAudioFrame[0]);											// Pointer to where Flash will read from
+		samplesPtr = &(chPtr->inAudioFrameSamples);										// Pointer for flash to r/w the number of samples
+		
+		// Compute twiddles for various size FFTs that may be computed
+		computeTwiddleFactors(chPtr->doubleTwiddle, chPtr->getFFTSize()*2, 1);			// 2x Twiddle factors for FFT computation
+		computeTwiddleFactors(chPtr->invDoubleTwiddle, chPtr->getFFTSize()*2, -1);		// 2x Twiddle for inverse FFT
+		computeTwiddleFactors(chPtr->twiddle, chPtr->getFFTSize(), 1);					// Twiddle factors for FFT computation
+		computeTwiddleFactors(chPtr->invTwiddle, chPtr->getFFTSize(), -1);				// Twiddle for inverse FFT
+		computeTwiddleFactors(chPtr->halfTwiddle, chPtr->getFFTSize()/2, 1);			// Twiddle factors for realFFT computation
+		computeTwiddleFactors(chPtr->invHalfTwiddle, chPtr->getFFTSize()/2, -1);		// Twiddle for inverse realFFT		
 		char name[] = "right";
 		chPtr->setChannelName(name);
 
@@ -408,6 +426,9 @@ AS3_Val initAudioChannel(void *self, AS3_Val args) {
 		sampleRate - The new sample rate
 		numCh - The number of total channels used (1 or 2)		
 	
+	See Also:
+	
+		<AudioChannel.cpp->reInitChannel>
 */
 AS3_Val reInitializeChannel(void* self, AS3_Val args) {
 
@@ -426,9 +447,15 @@ AS3_Val reInitializeChannel(void* self, AS3_Val args) {
 	// Reinitialize the channel
 	chPtr->reInitChannel(hop, nextPowerOf2(2*hop), fs, numCh);
 	getFreq(chPtr->freqData, chPtr->getFFTSize(), chPtr->getSampleRate());		// Compute frequency array for later usage
-	hannWindow(chPtr->hannCoefficients, chPtr->getFFTSize());					// Compute hann window for later usage
+	hannWindow(chPtr->hannCoefficients, 2*hop);									// Compute hann window for later usage
+
+	// Compute twiddles for various size FFTs that may be computed
+	computeTwiddleFactors(chPtr->doubleTwiddle, chPtr->getFFTSize()*2, 1);		// 2x Twiddle factors for FFT computation
+	computeTwiddleFactors(chPtr->invDoubleTwiddle, chPtr->getFFTSize()*2, -1);	// 2x Twiddle for inverse FFT	
 	computeTwiddleFactors(chPtr->twiddle, chPtr->getFFTSize(), 1);				// Twiddle factors for FFT computation
 	computeTwiddleFactors(chPtr->invTwiddle, chPtr->getFFTSize(), -1);			// Twiddle factors for FFT computation
+	computeTwiddleFactors(chPtr->halfTwiddle, chPtr->getFFTSize()/2, 1);		// Twiddle factors for realFFT computation
+	computeTwiddleFactors(chPtr->invHalfTwiddle, chPtr->getFFTSize()/2, -1);	// Twiddle for inverse realFFT	
 
 	return 0;
 }
@@ -467,7 +494,6 @@ AS3_Val getInAudioPtr(void *self, AS3_Val args){
 		*chPtr - A pointer to an AudioChannel.
 
 */
-
 AS3_Val setInputBuffer(void *self, AS3_Val args){
 
 	AudioChannel *chPtr;
@@ -488,9 +514,6 @@ AS3_Val setInputBuffer(void *self, AS3_Val args){
 	// Clear the FFT frame (zero pad)
 	chPtr->clearFFTFrame();	
 
-	// TODO: Hann window only audio not the zero pad
-	// the window should be frameSize not fftSize in initChannel
-	
 	// Hann window frame and copy to fftFrame
 	if(!chPtr->stereo){
 		
@@ -501,12 +524,14 @@ AS3_Val setInputBuffer(void *self, AS3_Val args){
 			}			
 			// Kick input buffer read pointer back to it's original position	
 			chPtr->inBuffer->setReadPtr(-samp);
+			
 		}else{
 			for(i = 0; i < chPtr->getHopSize() + samp; i++){
 				chPtr->fftFrame[i] = chPtr->inBuffer->readBuffer()*chPtr->hannCoefficients[i];
 			}		
 			// Kick input buffer read pointer back a frame again so it is in it's original position	
 			chPtr->inBuffer->setReadPtr(-chPtr->getHopSize());
+			
 		}		
 			
 	} else if (chPtr == leftCh){ 
@@ -516,7 +541,7 @@ AS3_Val setInputBuffer(void *self, AS3_Val args){
 		// on mono data to avoid excess computation.
 		
 	} else{	
-			
+		
 		// Convert to mono for spectral analysis
 		if(chPtr->firstFrame){	
 			for(i = 0; i < samp; i++){
@@ -526,7 +551,7 @@ AS3_Val setInputBuffer(void *self, AS3_Val args){
 			// Since we read from the left and right channels we must set both pointers back
 			leftCh->inBuffer->setReadPtr(-samp);
 			rightCh->inBuffer->setReadPtr(-samp);
-
+			
 		}else{
 			for(i = 0; i < chPtr->getHopSize() + samp; i++){
 				leftCh->fftFrame[i] = ((leftCh->inBuffer->readBuffer() + rightCh->inBuffer->readBuffer())/2) * leftCh->hannCoefficients[i];
@@ -534,19 +559,18 @@ AS3_Val setInputBuffer(void *self, AS3_Val args){
 			
 			// Since we read from the left and right channels we must set both pointers back
 			leftCh->inBuffer->setReadPtr(-leftCh->getHopSize());
-			rightCh->inBuffer->setReadPtr(-rightCh->getHopSize());
-
+			rightCh->inBuffer->setReadPtr(-rightCh->getHopSize());						
 		}
 					
 	}
-
+	
 	return 0;
 }
 /*
  Function: checkInputBuffer
  
  Before copying new data to inAudioFrame, this function determines if the new data can be added. If there is insufficient 
- space in the audio channel's input buffer, adding more samples can eventually lead to the buffer over-running
+ space in the audio channel's inBuffer, adding more samples can eventually lead to the buffer over-running
  itself. This function determines if more data should be added based on the positions of the read and write pointers.
  The setFrame function in <DATF.as> uses the flag returned by this function to determine if a new frame should be set.
  
@@ -556,7 +580,7 @@ AS3_Val setInputBuffer(void *self, AS3_Val args){
  
  Returns:
  
-	returnVal: an array that contains a boolean flag (1 or 0) indicating if the channel's input buffer can be written to
+	An array that contains a boolean flag (1 or 0) indicating if the channel's input buffer can be written to
  
  */
 AS3_Val checkInputBuffer(void *self, AS3_Val args) {
@@ -607,7 +631,7 @@ AS3_Val resetFlags(void *self, AS3_Val args){
 
 	See Also:
 	
-		<DATF.endOfFile>, <AudioChannel.cpp.flags>
+		<DATF.endOfFile>, <AudioChannel.cpp>
 
 */
 AS3_Val setFirstFrame(void *self, AS3_Val args){
@@ -619,7 +643,6 @@ AS3_Val setFirstFrame(void *self, AS3_Val args){
 	
 	return 0;
 }
-
 /*
 	Function: resetAll
 	
@@ -629,6 +652,8 @@ AS3_Val setFirstFrame(void *self, AS3_Val args){
 	
 		*chPtr - A pointer to an AudioChannel
 
+	See Also:
+		<AudioChannel.cpp->resetChannel>
 */
 AS3_Val resetAll(void *self, AS3_Val args){
 	
@@ -649,7 +674,7 @@ AS3_Val resetAll(void *self, AS3_Val args){
 	
 	Parameters:			
 	
-	Returns:
+		The parameters are the same as those in the DATF reverb function.
 	
 	See Also:
 	
@@ -677,9 +702,10 @@ AS3_Val addReverb(void *self, AS3_Val args){
 				   &srcLen, &srcWid, &srcHt, 
 				   &micLen, &micWid, &micHt,
 				   &echoStrength);
-				   					  			   	
+
+	
 	if(strcmp(active,"on") == 0) {
-		
+	
 		// We are brining reverb into the audio processing chain, so we need to indicate that the channel's output circular buffer is engaged
 		chPtr->setCircularBufferFlag(true);
 		
@@ -697,7 +723,7 @@ AS3_Val addReverb(void *self, AS3_Val args){
 										 chPtr->micPosition[0], chPtr->micPosition[1], chPtr->micPosition[2], echoStrength);
 
 		// Generate filter if needed
-		if(needRoom){		
+		if(needRoom){				
 			chPtr->filter = rir(chPtr->getSampleRate(), echoStrength, chPtr->micPosition, chPtr->roomSize, chPtr->sourcePosition, rirLen);
 			chPtr->filterLen = rirLen[0];	
 			chPtr->setRoom(chPtr->roomSize[0], chPtr->roomSize[1], chPtr->roomSize[2],
@@ -708,6 +734,7 @@ AS3_Val addReverb(void *self, AS3_Val args){
 		// Tell the AudioChannel that filter processing is in effect
 		chPtr->filterProcessing = 1;
 		filter(chPtr, chPtr->filter, chPtr->filterLen);
+
 		
 	} else if(strcmp(active,"off") == 0) {
 	
@@ -805,7 +832,7 @@ AS3_Val getCentroid(void *self, AS3_Val args) {
 /*
 	Function: getFlux
 	
-		A function to calculate the spectral flux of the current frame. The current flux value is stored for use in
+		A function to calculate the spectral flux of the current frame. The current spectrum is stored for use in
 		calculation of the flux for the next frame.
 		
 	Parameters:
@@ -844,22 +871,30 @@ AS3_Val getFlux(void *self, AS3_Val args) {
 	return AS3_Number(fluxVal);
 }
 /*
-	Function: 
+	Function: getHarmonics
 		
+	This function finds harmonics present in a frame by using linear prediction.
+	
 	Parameters:
 	
+		*chPtr - A pointer to an audio channel
+		reqHarms - The number of harmonics to be found in the spectrum.
+		
 	Returns:
 	
+		error - An int indicating an error(1) or no error(0).
+		foundHarms - The number of harmonics found. 
+		*harmPeaks - An array containing the  amplitude of the harmonics.
+		*harmFreqs - An array of the frequencies of the harmonics.
+	
 	See Also:
-
+	
+		<DSPFunctions.c->LPC>
 */
 AS3_Val getHarmonics(void *self, AS3_Val args) {
 
 	AudioChannel *chPtr;
-	int error = 0;
-	
-	// Using fixed order 
-	int order = 10;
+	int order = 10;		//linear predictioin order, maybe make this selectable in the future
 	
 	// Initialize arrays that will store the data
 	float lpCE[2][order + 1];
@@ -869,25 +904,28 @@ AS3_Val getHarmonics(void *self, AS3_Val args) {
 
 	// Defaults to 10 requested harmonics unless the user specifies something else
 	int i, reqHarms = 10, dbAdj = 3, foundHarms = 0;
+	int error = 0;	//initalize var that indicates an error result from the prediction
 	
-	// Read in parameters
+	// Read in  user specified parameters
 	AS3_ArrayValue(args, "IntType, IntType", &chPtr, &reqHarms);
 	if(DEBUG) {sprintf(outStr, "Reqesting LPC for data with length: %i and order: %i", chPtr->getFFTSize(), order); DISP(outStr);}
 	if(DEBUG) {sprintf(outStr, "requesting %i harmonics for the the audio data \n", reqHarms); DISP(outStr);}
 	
-	// Some input checking to make sure the values are legitimate
+	// Some input checking to make sure the user is asking for legitimate values
 	if(reqHarms <= 0 ) { reqHarms = 10;} 
 	else if (reqHarms > (chPtr->getFFTSize())/2 + 1) { reqHarms = (chPtr->getFFTSize())/2 + 1;}
 	else {}
+
+	// This zero pads the correlation data frame so an FFT can be calculated
+	chPtr->clearCorrFrame();
 	
-	int numRows = 2;
-	int numCols = order + 1;
+	//compute the autocorrelation of the sequence
+	autoCorr(chPtr->fftFrame, chPtr->getFFTSize(), chPtr->corrData, chPtr->corrDataOut, chPtr->doubleTwiddle,
+			 chPtr->invDoubleTwiddle, chPtr->twiddle, chPtr->invTwiddle, chPtr->scratch);
 	
 	// Run linear prediction on the frame and get coeffiecients
-	error = LPC(chPtr->fftFrame, chPtr->getFFTSize(), order, *lpCE, numRows, numCols);	
+	error = LPC(chPtr->corrData, chPtr->getFFTSize(), order, *lpCE);			
 	
-
-
 	// Check for error in LPC formulation
 	if(error == 1) { sprintf(outStr, "error in getHarmonics: LPC returned an error \n"); DISP(outStr);}
 	else {
@@ -896,35 +934,30 @@ AS3_Val getHarmonics(void *self, AS3_Val args) {
 		float input[chPtr->getFFTSize()*2];			// This array has the impulse
 		float output[chPtr->getFFTSize()*2];		// This array has the output, which we will take FFT of
 		float output2[chPtr->getFFTSize()*2];
-		for(i = 0; i < chPtr->getFFTSize(); i++) {	// Preallocate these to zero
-			input[i] = 0; output[i] = 0;
-		}
+		
+		// Preallocate these to zero
+		for(i = 0; i < chPtr->getFFTSize(); i++) { input[i] = 0; output[i] = 0; }
 		input[0] = 1;								// Setting first element to 1 for unit impulse
 		
 		float numCoeffs[1]; numCoeffs[0] = 1;		// Init the numerator coeffs. its an all pole filter, so no zeros in the numerator
 		float denomCoeffs[order + 1];				// Init the array for denom coeffs
 		float gain = lpCE[1][0];					// Specify the gain explicitly
-		for(i = 0; i < (order + 1); i++) {			// Initialize the denominator coefficients from the result of LPC
-			denomCoeffs[i] = lpCE[0][i];
-			//sprintf(outStr, "denCoe[%i] = %4.15f", i, denomCoeffs[i]); DISP(outStr);
-		}
-	
-		//sprintf(outStr, "gain: %f", gain); DISP(outStr);
+		
+		// Initialize the denominator coefficients from the result of LPC
+		for(i = 0; i < (order + 1); i++) { denomCoeffs[i] = lpCE[0][i];	}
 		
 		// Gen impulse response.... note we specify the length at 25% of fftSize to get a good ringing
 		iirFilter(input, output, (chPtr->getFFTSize())/4, gain, numCoeffs, denomCoeffs, 1, (order + 1));
 
 		// Find spectrum of IR
-		realFFT(output, chPtr->getFFTSize(), chPtr->twiddle, input, 1);
+		realFFT(output, input, chPtr->getFFTSize(), chPtr->twiddle, chPtr->halfTwiddle, chPtr->scratch, 1);
 		unpackFrequency(input, chPtr->getFFTSize());
 
 		// Get the magnitude response of IR
 		magSpectrum(input, resp, chPtr->getFFTSize(), 1);
 		
 		// Compute FFT of current frame of audio
-		if(!chPtr->getFFTFlag()){
-			computeFFT(chPtr);
-		}
+		if(!chPtr->getFFTFlag()){ computeFFT(chPtr); }
 		
 		// Obtain the magnitude spectrumm with dB's here
 		magSpectrum(chPtr->fftOut, chPtr->magSpectrum, chPtr->getFFTSize(), 1);
@@ -1000,14 +1033,21 @@ AS3_Val getIntensity(void *self, AS3_Val args) {
 	return AS3_Number(intensityVal);
 }
 /*
-	Function: 
+	Function: getLPC
+		
+	This function calculates the linear prediction coefficients	
 		
 	Parameters:
 	
+		*chPtr - A pointer to an AudioChannel
+		order - An int specifying the prediction order of the linear prediction filter.
 	Returns:
 	
+		error - An int signifying (1) if there is an error or no error (0).
+		*lpCE - An array containing the linear prediction coefficients.
 	See Also:
-
+	
+		<DATF->getLPC>, <DSPFunctions.c->LPC>
 */
 AS3_Val getLPC(void *self, AS3_Val args) {
 
@@ -1015,12 +1055,17 @@ AS3_Val getLPC(void *self, AS3_Val args) {
 	AudioChannel *chPtr;
 	AS3_ArrayValue(args, "IntType, IntType", &chPtr, &order);
 	
-	int numRows = 2;
-	int numCols = order + 1;
 	float lpCE[2][order + 1];
 	
-	// Call the LPC method...
-	error = LPC(chPtr->fftFrame, chPtr->getFFTSize(), order, *lpCE, numRows, numCols);		
+	// This zero pads the correlation data frame so an FFT can be calculated
+	chPtr->clearCorrFrame();
+	
+	//compute the autocorrelation of the sequence
+	autoCorr(chPtr->fftFrame, chPtr->getFFTSize(), chPtr->corrData, chPtr->corrDataOut, chPtr->doubleTwiddle,
+			 chPtr->invDoubleTwiddle, chPtr->twiddle, chPtr->invTwiddle, chPtr->scratch);
+	
+	error = LPC(chPtr->corrData, chPtr->getFFTSize(), order, *lpCE);
+	
 	if(error == 1) { sprintf(outStr, "error in getLPC: LPC returned an error \n"); DISP(outStr);}
 	// We return the error to notify of an error in the computation
 	// and we return the pointer to the coefficient array so we can read them out, if desired
@@ -1045,7 +1090,7 @@ AS3_Val getLPC(void *self, AS3_Val args) {
 	
 	See Also:
 	
-		<AudioChannel.cpp>, <DSPFunctions.c.magSpectrum()>
+		<AudioChannel.cpp>, <DSPFunctions.c.magSpec()>
 
 */
 AS3_Val getComplexSpectrum(void *self, AS3_Val args){
@@ -1084,7 +1129,7 @@ AS3_Val getComplexSpectrum(void *self, AS3_Val args){
 	
 	See Also:
 	
-		<AudioChannel.cpp>, <DSPFunctions.c.magSpectrum()>
+		<AudioChannel.cpp>, <DSPFunctions.c.magSpec()>
 
 */
 AS3_Val getMagSpec(void *self, AS3_Val args){
@@ -1124,7 +1169,7 @@ AS3_Val getMagSpec(void *self, AS3_Val args){
 	
 	See Also:
 	
-		<DSPFuncs.rolloff()>
+		<DSPFunctions.c->rolloff()>
 
 */
 AS3_Val getRolloff(void *self, AS3_Val args) {
@@ -1159,11 +1204,11 @@ AS3_Val getRolloff(void *self, AS3_Val args) {
 		
 	See Also:
 
-	<DSPFuncs.realft()>, <DSPFuncs.repackFFT()>
+	<DSPFunctions.c->realFFT()>
 	
 	Notes:
 	
-		In general the funciton is used to reconstruct a signal that was already transformed using <performFFT>
+		In general the funciton is used to reconstruct a signal that was already transformed using <DSPFunctions.c->realFFT>
 */
 AS3_Val performIFFT(void* self, AS3_Val args) {
 
@@ -1198,9 +1243,6 @@ AS3_Val performIFFT(void* self, AS3_Val args) {
 	
 		*fftSize - An int specifying the FFT size.
 				
-	See Also:
-
-	<DSPFuncs.magSpectrum()>, <DATF.magSpectrum>
 */
 AS3_Val getFFTSize(void* self, AS3_Val args) {
 
@@ -1218,7 +1260,7 @@ AS3_Val getFFTSize(void* self, AS3_Val args) {
 // TODO: handle frame size/twiddle
 void computeFFT(AudioChannel *ch){
 			
-	realFFT(ch->fftFrame, ch->getFFTSize(), ch->twiddle, ch->fftOut, 1);	
+	realFFT(ch->fftFrame, ch->fftOut, ch->getFFTSize(), ch->twiddle, ch->halfTwiddle, ch->scratch, 1);	
 	unpackFrequency(ch->fftOut, ch->getFFTSize());
 	ch->setFFTFlag(true);
 }
@@ -1226,14 +1268,13 @@ void computeFFT(AudioChannel *ch){
 void computeIFFT(AudioChannel *ch) {
 
 	pack(ch->fftOut, ch->getFFTSize());
-	realFFT(ch->fftOut, ch->getFFTSize(), ch->invTwiddle, ch->fftFrame, -1);
+	realFFT(ch->fftOut, ch->fftFrame, ch->getFFTSize(), ch->invTwiddle, ch->invHalfTwiddle, ch->scratch, -1);
 	unpackTime(ch->fftOut, ch->getFFTSize());
 		
 	ch->setFFTFlag(false);
 }
 
-void filter(AudioChannel *ch, float *fir, int firLength) {
-	//sprintf(outStr, "in filter firLength = %i", firLength); DISP(outStr);
+void filter(AudioChannel *ch, float *fir, int firLength) {	
 	/*************************************************************
 	 FILTER
 	 This is an internal method that is used to implement fast convolution via frequency domain
@@ -1246,7 +1287,6 @@ void filter(AudioChannel *ch, float *fir, int firLength) {
 	 OUTPUTS:
 		none
 	 */
-	float *dataArray, *dataArrayOut,  *filterArray, *filterArrayOut;
 	float numOverlap;
 	int convLen, i;
 	bool processFilter = false;
@@ -1269,56 +1309,56 @@ void filter(AudioChannel *ch, float *fir, int firLength) {
 
 	if(diffSamples >= minInputLen){processFilter = true;}
 	else{processFilter = false;}
-
-	//sprintf(outStr, "diffSamp in filter: %i process filter: %i\n", diffSamples, processFilter); DISP(outStr);
+		
 	if(processFilter){
 		convLen = diffSamples + firLength - 1;		// Size of convolution = legnth(seq1) + length(seq2) - 1
 		
+		if(convLen > 8192){
+			convLen = 8192;
+			firLength = convLen - diffSamples + 1;
+		}
 		// Now we need to figure out how large to allocate our arrays based on convLen
 		// We need powers of 2 for efficiency and need to avoid circular convolution
-		int pow2 = nextPowerOf2(convLen);
-
-		dataArray = (float *) calloc((2*pow2), sizeof(float));
-		dataArrayOut = (float *) calloc((2*pow2), sizeof(float));
-		filterArray = (float *) calloc((2*pow2), sizeof(float));
-		filterArrayOut = (float *) calloc((2*pow2), sizeof(float));		
+		int pow2 = nextPowerOf2(convLen);	
 		
-		// Need to copy the values in to the arrays we just allocated
-		//sprintf(outStr, "diffSamples = %i, ch->filterLen = %i firLength = %i, pow2 = %i", diffSamples, ch->filterLen, firLength, pow2); DISP(outStr);
+		// Need to copy the values 	
 		for(i = 0; i < diffSamples; i++){
-			dataArray[i] = ch->inBuffer->readBuffer();
-		}
+			ch->dataArray[i] = ch->inBuffer->readBuffer();
+		}		
+		
 		for(i = 0; i < firLength; i++){
-			filterArray[i] = fir[i];
+			ch->filterArray[i] = fir[i];
 		}
 		
-		if(ch->filterFFTSize != pow2){			
+		if(ch->filterFFTSize != pow2){	
 			computeTwiddleFactors(ch->filterTwiddle, pow2, 1);
+			computeTwiddleFactors(ch->filterHalfTwiddle, pow2/2, 1);
 			computeTwiddleFactors(ch->filterInvTwiddle, pow2, -1);
+			computeTwiddleFactors(ch->filterInvHalfTwiddle, pow2/2, -1);
 			ch->filterFFTSize = pow2;
 		}
 
-		realFFT(dataArray, pow2, ch->filterTwiddle, dataArrayOut, 1);
-		unpackFrequency(dataArrayOut, pow2);
+		realFFT(ch->dataArray, ch->dataArrayOut, pow2, ch->filterTwiddle, ch->filterHalfTwiddle, ch->scratch, 1);
+		unpackFrequency(ch->dataArrayOut, pow2);
 		
-		realFFT(filterArray, pow2, ch->filterTwiddle, filterArrayOut, 1);
-		unpackFrequency(filterArrayOut, pow2);
+		realFFT(ch->filterArray, ch->filterArrayOut, pow2, ch->filterTwiddle, ch->filterHalfTwiddle, ch->scratch, 1);
+		unpackFrequency(ch->filterArrayOut, pow2);
 				
 		// Perform a frequency domain multiplication on data and filter arrays to perform convolution
 		float realData, imagData, realFilter, imagFilter;
 		for(i = 0; i < pow2; i = i+2) {
-			realData = dataArrayOut[i];
-			imagData = dataArrayOut[i+1];
-			realFilter = filterArrayOut[i];
-			imagFilter = filterArrayOut[i+1];
-			filterArrayOut[i] = realData*realFilter - imagData*imagFilter;
-			filterArrayOut[i+1] = imagData*realFilter + realData*imagFilter;
+			realData = ch->dataArrayOut[i];
+			imagData = ch->dataArrayOut[i+1];
+			realFilter = ch->filterArrayOut[i];
+			imagFilter = ch->filterArrayOut[i+1];
+			ch->filterArrayOut[i] = realData*realFilter - imagData*imagFilter;
+			ch->filterArrayOut[i+1] = imagData*realFilter + realData*imagFilter;
 		}
 
 		// Inverse Fourier
-		pack(filterArrayOut, pow2);
-		realFFT(filterArrayOut, pow2, ch->filterInvTwiddle, dataArrayOut, -1);		
-		unpackTime(dataArrayOut, pow2);
+		pack(ch->filterArrayOut, pow2);
+		realFFT(ch->filterArrayOut, ch->dataArrayOut, pow2, ch->filterInvTwiddle, ch->filterInvHalfTwiddle, ch->scratch, -1);		
+		unpackTime(ch->dataArrayOut, pow2);
 		
 		float maxVal= 0.0;
 		int clipping = 0;
@@ -1326,12 +1366,12 @@ void filter(AudioChannel *ch, float *fir, int firLength) {
 		// Need to re-scale the IFFT because numerical recipes weights it
 		float scaleFactor = 2.0/(pow2);		
 		for (i = 0; i < pow2; i++) {
-			dataArrayOut[i] *= scaleFactor/2;
+			ch->dataArrayOut[i] *= scaleFactor/2;
 		}
 		
 		// Now need to write the values to the AudioChannel's output circular buffer
 		int overlapSamples = convLen - diffSamples;
-		
+				
 		// Figure out the amount overlap so we don't have sources clipping when they add together
 		numOverlap = (float)convLen/(float)(diffSamples);
 		numOverlap = ceil(numOverlap);
@@ -1341,26 +1381,19 @@ void filter(AudioChannel *ch, float *fir, int firLength) {
 		for(i = 0; i< convLen; i++) {
 			if(i < overlapSamples) {	
 				// This means we add samples because they overlap with left over from previous frame
-				ch->outBuffer->addBuffer(dataArrayOut[i], 1);
+				ch->outBuffer->addBuffer(ch->dataArrayOut[i], 1);
 			}else{						
 				// If they are not overlapping, we just write to the buffer directly
-				ch->outBuffer->writeBuffer(dataArrayOut[i]);
+				ch->outBuffer->writeBuffer(ch->dataArrayOut[i]);
 			}
 		}
 		
 		// Knock the write pointer back by the number of overlapping samples for the next frame
 		ch->outBuffer->setWritePtr(-overlapSamples);	
-		
-		// Free the memory we allocated
-		free(dataArray);
-		free(filterArray);
-		free(dataArrayOut);
-		free(filterArrayOut);		
-		
+			
 	}else{
 		// If we don't have enough samples, we do nothing until there are more samples available
 	}
-	
 }
 
 void computeMagnitudeSpectrum(AudioChannel *ch) {

@@ -28,15 +28,12 @@
 char out[200];
 #define DISP(lit) AS3_Trace(AS3_String(lit));	//macro function for printing data for debugging
 
-//int minSampleSize 2048;
-//int maxSampleSize 4096;
-
 /*
  Class: AudioChannel.cpp
  
  This class manages the buffers and other data needed in audio storage, playback, and processing. There are circular buffers for the
  input and output audio streams. Data that is reused from frame to frame (e.g. filter coefficients) is stored in this class and is
- accessible in <ALFPackage.cpp> for use with the DSP functions contained in <DSPFuncs.c>.
+ accessible in <ALFPackage.cpp> for use with the DSP functions contained in <DSPFunctions.c>.
 */	
 
 /*
@@ -54,7 +51,7 @@ char out[200];
  * magFlag - Boolean indicating if the magnitude spectrum has been computed on the fftFrame. Default: false.
  * centroidFlag - Boolean indicating if the spectral centroid has been performed on the current frame of data. Default: false.
  * centroidVal - Stores the value of the spectral centroid for feature computatons. Default: 0.
- * filterLen - WILL BECOME OBSOLETE. NEED TO REMOVE FROM AUDIOCHANNEL.CPP & .H AND ALFPACKAGE.CPP
+ * filterLen - The length of the filter used in the filter command in <ALFPackage.cpp>
  * filterProcessing - Boolean value indicating if processing functionality (aka filter) is currently in use. Default: 0;
  */
 AudioChannel::AudioChannel(){
@@ -74,13 +71,30 @@ AudioChannel::~AudioChannel() {
 
 	free(inAudioFrame);
 	free(outAudioFrame);
-	free(fftFrame);
-	free(fftOut);
 	free(freqData);
 	free(magSpectrum);
 	free(spectrumPrev);
 	free(hannCoefficients);
-	free(filter);
+	free(filter);		
+	free(fftFrame);
+	free(fftOut);	
+	free(scratch);
+	free(twiddle);
+	free(invTwiddle);
+	free(halfTwiddle);
+	free(invHalfTwiddle);
+	free(filterTwiddle);
+	free(filterInvTwiddle);
+	free(filterHalfTwiddle);
+	free(filterInvHalfTwiddle);
+	free(doubleTwiddle);
+	free(invDoubleTwiddle);
+	free(dataArray);
+	free(dataArrayOut);	
+	free(filterArray);
+	free(filterArrayOut);	
+	free(corrData);
+	free(corrDataOut);
 	
 	delete [] roomSize;
 	delete [] sourcePosition;
@@ -93,7 +107,7 @@ AudioChannel::~AudioChannel() {
  
  This function is called with the allocation of every DATF (or ALF) object from ActionScript for a desired audio channel
  (left or right). This function initializes the circular buffers needed for input and output. It also initializes memory
- required for the feature analysis functions. Certain flags are initialized as well. See Section <Buffers>
+ required for the feature analysis functions. Certain flags are initialized as well. See Sections <Private Members>, <Public Members>
  
  Parameters:
  
@@ -109,24 +123,11 @@ void AudioChannel::initChannel(int _hopSize, int _fftSize, int _fs) {
 	fs = _fs;
 	if(hopSize < 2048){ audioOutputSize = 2*hopSize;} // = 2048 b/c this is the least # of samples flash can play at once
 	else{ audioOutputSize = hopSize; }	
+	
+	// Audio pointers shared with AS
 	inAudioFrame = (float*) malloc(sizeof(float)*(fftSize + 2));		// We initialize this to be 2 larger for the weird fftPacking thing
 	outAudioFrame = (float*) malloc(sizeof(float)*4096);				// Maxsamplesize is the max number of samples flash can playback
-	fftFrame = (float*) malloc(sizeof(float)*(fftSize*2));
-	fftOut = (float*) malloc(sizeof(float)*(fftSize*2));
-	twiddle = (float*) malloc(sizeof(float)*(fftSize));
-	invTwiddle = (float*) malloc(sizeof(float)*(fftSize));	
-	freqData = (float*) malloc(sizeof(float)*(fftSize/2 + 1));			// Number of unique frequencies in the specific fftLength
-	magSpectrum = (float*) malloc(sizeof(float)*(fftSize/2 + 1));		// Number of unique magnitudes ""			""
-	spectrumPrev = (float *) calloc((fftSize/2 + 1),sizeof(float));
-	hannCoefficients = (float *) malloc(sizeof(float)*fftSize*2);
-	filterTwiddle = (float *) calloc(16384, sizeof(float));
-	filterInvTwiddle = (float *) calloc(16384, sizeof(float));
-	filterLen = 0;
-	
-	roomSize = new float[3];
-	sourcePosition = new float[3];
-	micPosition = new float[3];
-	
+
 	// Allocates our input circular buffer 
 	int buffSize = 30000;
 	inBuffer = new CircularBuffer[1];
@@ -136,6 +137,43 @@ void AudioChannel::initChannel(int _hopSize, int _fftSize, int _fs) {
 	buffSize = 30000;
 	outBuffer = new CircularBuffer[1];
 	outBuffer->initBuffer(buffSize);
+	
+	// FFT
+	fftFrame = (float*) malloc(sizeof(float)*(fftSize*2));
+	fftOut = (float*) malloc(sizeof(float)*(fftSize*2));
+	scratch = (float*) malloc(sizeof(float)*(fftSize*4));
+	twiddle = (float*) malloc(sizeof(float)*(fftSize));
+	invTwiddle = (float*) malloc(sizeof(float)*(fftSize));
+	halfTwiddle = (float*) malloc(sizeof(float)*(fftSize/2));
+	invHalfTwiddle = (float*) malloc(sizeof(float)*(fftSize/2));
+	hannCoefficients = (float *) calloc(fftSize, sizeof(float));
+	
+		
+	// Features				
+	freqData = (float*) malloc(sizeof(float)*(fftSize/2 + 1));			// Number of unique frequencies in the specific fftLength
+	magSpectrum = (float*) malloc(sizeof(float)*(fftSize/2 + 1));		// Number of unique magnitudes ""			""
+	spectrumPrev = (float *) calloc((fftSize/2 + 1),sizeof(float));
+	
+	// Filtering
+	filterTwiddle = (float *) calloc(16384, sizeof(float));
+	filterInvTwiddle = (float *) calloc(16384, sizeof(float));
+	filterHalfTwiddle = (float *) calloc(8192, sizeof(float));
+	filterInvHalfTwiddle = (float *) calloc(8192, sizeof(float));
+	dataArray = (float *) calloc(32768, sizeof(float));
+	dataArrayOut = (float *) calloc(32768, sizeof(float));
+	filterArray = (float *) calloc(32768, sizeof(float));
+	filterArrayOut = (float *) calloc(32768, sizeof(float));			
+	filterLen = 0;
+	
+	// Correlation
+	corrData = (float * ) calloc((fftSize*4), sizeof(float));
+	corrDataOut = (float * ) calloc((fftSize*4), sizeof(float));
+	doubleTwiddle = (float*) calloc((fftSize*2), sizeof(float));
+	invDoubleTwiddle = (float*) calloc((fftSize*2), sizeof(float));	
+		
+	roomSize = new float[3];
+	sourcePosition = new float[3];
+	micPosition = new float[3];
 	
 	// Initialize flags/values		
 	inAudioFrameSamples = 0;
@@ -148,9 +186,8 @@ void AudioChannel::initChannel(int _hopSize, int _fftSize, int _fs) {
 /* 
  Function: reInitChannel()
  
- This function is called with the allocation of every DATF (or ALF) object from ActionScript for a desired audio channel
- (left or right). This function initializes the circular buffers needed for input and output. It also initializes memory
- required for the feature analysis functions. Certain flags are initialized as well. See Section <Buffers>
+This funciton is called when a channel (L or R) has already been instantiated and initialized and a new song is loaded that requires changes
+to the buffer sizes.
  
  Parameters:
  
@@ -161,8 +198,6 @@ void AudioChannel::initChannel(int _hopSize, int _fftSize, int _fs) {
  */
 void AudioChannel::reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh) {
 
-	sprintf(out, "reInitializing Channel"); DISP(out);
-
 	fftSize = _fftSize;
 	hopSize = _hopSize;
 	fs = _fs;
@@ -171,19 +206,32 @@ void AudioChannel::reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh)
 	else{ audioOutputSize = hopSize; }	
 		
 	// Reallocate memory because we have changed sample or frame rate	
+
+	// Audio buffers
 	free(inAudioFrame);
 	inAudioFrame = (float *) calloc(2*hopSize, sizeof(float));
+
+	// FFT
 	fftFrame = (float *)realloc(fftFrame, sizeof(float)*(fftSize*2));
 	fftOut = (float *)realloc(fftOut, sizeof(float)*(fftSize*2));
+	scratch = (float *)realloc(scratch, sizeof(float)*(fftSize*4));
 	twiddle = (float*) realloc(twiddle, sizeof(float)*(fftSize));
 	invTwiddle = (float*) realloc(invTwiddle, sizeof(float)*(fftSize));	
+
+	// Features
 	freqData = (float *)realloc(freqData, sizeof(float)*(fftSize/2 + 1));
 	magSpectrum = (float *)realloc(magSpectrum, sizeof(float)*(fftSize/2 + 1))	;
 	spectrumPrev = (float *)realloc(spectrumPrev, (fftSize/2 + 1)*sizeof(float));	
-	hannCoefficients = (float *)realloc(hannCoefficients, sizeof(float)*fftSize*2);	
+	hannCoefficients = (float *)realloc(hannCoefficients, sizeof(float)*fftSize);	
 	filterLen = 0;
 	filterFFTSize = 0;
 
+	// Correlation
+	corrData = (float *) realloc(corrData, (fftSize*4)*sizeof(float));
+	corrDataOut = (float *) realloc(corrDataOut, (fftSize*4)*sizeof(float));
+	doubleTwiddle = (float*) realloc(doubleTwiddle, sizeof(float)*(fftSize*2));
+	invDoubleTwiddle = (float*) realloc(invDoubleTwiddle, sizeof(float)*(fftSize*2));		
+		
 	// Clear previous spectrum array
 	int i;
 	for(i = 0; i < (fftSize/2 + 1); i++){
@@ -203,12 +251,63 @@ void AudioChannel::reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh)
 
 }
 
+
 /*
  Group: Utilities
+
+ Function: checkRoom()
  
+ This function checks if the parameters entered are the same as the ones stored in the audio channel.
+ 
+ Parameters:
+ 
+ 	newRoomLength - A float that is the new room length.
+	newRoomWidth - A float that is the new room width.
+	newRoomHeight - A float that is the new room height.
+	newSourceLength - A float that is the new source x location.
+	newSourceWidth - A float that is the new source y location.
+	newSourceHeight - A float that is the new source z location. 
+	newMicLength - A float that is the new mic x location.
+	newMicWidth - A float that is the new mic y location.
+	newMicHeight - A float that is the new mic y location.
+	newEchoStrength - A double indicating the new echo strength.
+	
+ Returns:
+ 
+	True if a new room impulse response must be calculated, false if the parameters entered are the same
+	as those in the channel.
+ 
+ See Also:
+ 
+ <setRoom>, <DATF.reverb>
+ */
+bool AudioChannel::checkRoom(	float newRoomLength, float newRoomWidth, float newRoomHeight, 
+								float newSourceLength, float newSourceWidth, float newSourceHeight, 
+								float newMicLength, float newMicWidth, float newMicHeight, double newEchoStrength){
+	// See if parameters are the same
+	if(	(roomLength == newRoomLength) &&
+		(roomWidth == newRoomWidth) &&
+		(roomHeight == newRoomHeight) &&
+		(sourceLength == newSourceLength) &&
+		(sourceWidth == newSourceWidth) &&
+		(sourceHeight == newSourceHeight) &&
+		(micLength == newMicLength) &&
+		(micWidth == newMicWidth) &&
+		(micHeight == newMicHeight) &&
+		(echoStrength == newEchoStrength) )
+	{
+		newRoom = false;
+	} else{
+		newRoom = true;	
+	}
+	return newRoom;
+}
+
+/* 
  Function: clearFFTFrame()
  
- Clears the fftFrame buffer, which has the FFT dta.
+ Clears the fftFrame buffer, which has the FFT data. This must be done every frame. It is equivalent to zero padding to the next 
+ power of 2 greater than the frameSize. This also clears the buffers used in the filter function in <ALFPackage.cpp>.
  
  */
 void AudioChannel::clearFFTFrame(){
@@ -219,11 +318,15 @@ void AudioChannel::clearFFTFrame(){
 		fftFrame[i] = 0;
 		fftOut[i] = 0;
 	}
+	for(i = 0; i < 32768; i++){ 
+		dataArray[i] = 0;
+		filterArray[i] = 0;
+	}	
 }
 /*
  Function: clearInAudioFrame()
  
- Clears the inAudioFrame buffer that is the only buffer that can be read and written to by C++ and Actionscript. This function
+ Clears the inAudioFrame buffer that is one of the buffers that can be read and written to by C++ and Actionscript. This function
  should be called when not writing a full frame as samples from the previous frame may remain and introduce error into 
  calculations that are performed.
  
@@ -232,67 +335,20 @@ void AudioChannel::clearInAudioFrame(){
 	memset(inAudioFrame, 0, hopSize*sizeof(float));
 }
 /*
- Function: getCentroidVal()
+ Function: clearCorrFrame()
  
- Returns the centroid of the audio spectrum from the current frame of data
+ Clears the frames for performing a correlation.
  
- Returns:
- 
- * centroidVal - the current frame's spectral centroid
- */
-float AudioChannel::getCentroidVal() {return centroidVal;}
+*/
+void AudioChannel::clearCorrFrame(){
+	int i;
+	for(i = 0; i < 4*fftSize; i++){ 
+		corrData[i] = 0;
+		corrDataOut[i] = 0;
+	}
+}
 /*
- Function: getChannelName()
- 
- Retrieves the name given to the AudioChannel object.
- 
- Returns:
- 
- * a pointer for the character array
- */
-char *AudioChannel::getChannelName() {return channelName;}
-/*
- Function: getFFTSize()
- 
- Returns the size of the FFT used on the current audio frame
- 
- Returns:
- 
- * fftSize: the fftSize used for the data
- */
-int AudioChannel::getFFTSize() { return  fftSize;}
-/*
- Function: getFrameSize()
- 
- Returns the user-specificed hopSize object
- 
- Returns:
- 
- * hopSize: the user's desired hopSize
- */
-int AudioChannel::getHopSize() { return  hopSize;}
-/*
- Function: getSampleRate()
- 
- Returns the sampling rate of the audio under analysis
- 
- Returns:
- 
- * fs - the audio sampling rate
- */
-int AudioChannel::getSampleRate() { return fs;}
-/*
- Function: getOutAudioFrameSamples()
- 
- Returns the current number of samples contained in outAudioFrame
- 
- Returns:
- 
- * outAudioFrameSamples - the current number of samples contained in outAudioFrame
- */
-int AudioChannel::getOutAudioFrameSamples(){return outAudioFrameSamples;}
-/*
-	Funciton: resetChannel
+	Function: resetChannel
 	
 	Resets the buffers and flags in the channel.
 	
@@ -312,7 +368,74 @@ void AudioChannel::resetChannel(){
 	stereo = false;
 	bufferReady = false;
 }
+
+
 /*
+ Group: Get Functions
+
+ Function: getCentroidVal()
+ 
+ Returns the centroid of the audio spectrum from the current frame of data
+ 
+ Returns:
+ 
+	centroidVal - The current frame's spectral centroid
+ */
+float AudioChannel::getCentroidVal() {return centroidVal;}
+/*
+ Function: getChannelName()
+ 
+ Retrieves the name given to the AudioChannel object.
+ 
+ Returns:
+ 
+ A pointer to the character array containing the channel name.
+ */
+char *AudioChannel::getChannelName() {return channelName;}
+/*
+ Function: getFFTSize()
+ 
+ Returns the size of the FFT used on the current audio frame
+ 
+ Returns:
+ 
+ The fftSize used in Fourier analysis.
+ */
+int AudioChannel::getFFTSize() { return  fftSize;}
+/*
+ Function: getHopSize()
+ 
+ Returns the user-specificed hopSize object
+ 
+ Returns:
+ 
+ The user's desired hopSize
+ */
+int AudioChannel::getHopSize() { return  hopSize;}
+/*
+ Function: getSampleRate()
+ 
+ Returns the sampling rate of the audio under analysis
+ 
+ Returns:
+ 
+ The audio sampling rate
+ */
+int AudioChannel::getSampleRate() { return fs;}
+/*
+ Function: getOutAudioFrameSamples()
+ 
+ Returns the current number of samples contained in outAudioFrame
+ 
+ Returns:
+ 
+ The current number of samples contained in outAudioFrame
+ */
+int AudioChannel::getOutAudioFrameSamples(){return outAudioFrameSamples;}
+
+/*
+ Group: Set Functions
+
  Function: setCentroidVal()
  
  Sets the value of the spectral centroid for the current frame
@@ -329,7 +452,7 @@ void AudioChannel::setCentroidVal(float val) {centroidVal = val;}
  
  Parameters:
  
- name - a pointer for the character array containing the desired name of the channel
+ name - A pointer for the character array containing the desired name of the channel
  */
 void AudioChannel::setChannelName(char name[]) {
 	int i;
@@ -354,13 +477,13 @@ void AudioChannel::setHopSize(int hop){
  
  Returns:
  
- _fs - the audio sampling rate
+ _fs - The audio sample rate
  */
 int AudioChannel::setSampleRate(int _fs) { fs = _fs;}
 /*
  Function: setAudioFrameSamples()
  
- Sets the number of samples currently contained inthe InAudioFrame buffer
+ Sets the number of samples currently contained inthe inAudioFrame buffer
  
  Parameters:
  
@@ -420,97 +543,55 @@ void AudioChannel::setRoom(	float newRoomLength, float newRoomWidth, float newRo
 
 }
 
-/*
- Function: setRoom()
- 
- This function checks if the parameters entered are the same as the ones stored in the audio channel.
- 
- Parameters:
- 
- 	newRoomLength - A float that is the new room length.
-	newRoomWidth - A float that is the new room width.
-	newRoomHeight - A float that is the new room height.
-	newSourceLength - A float that is the new source x location.
-	newSourceWidth - A float that is the new source y location.
-	newSourceHeight - A float that is the new source z location. 
-	newMicLength - A float that is the new mic x location.
-	newMicWidth - A float that is the new mic y location.
-	newMicHeight - A float that is the new mic y location.
-	newEchoStrength - A double indicating the new echo strength.
-	
- Returns:
- 
-	True if a new room impulse response must be calculated, false if the parameters entered are the same
-	as those in the channel.
- 
- See Also:
- 
- <checkRoom>, <DATF.reverb>
- */
-bool AudioChannel::checkRoom(	float newRoomLength, float newRoomWidth, float newRoomHeight, 
-								float newSourceLength, float newSourceWidth, float newSourceHeight, 
-								float newMicLength, float newMicWidth, float newMicHeight, double newEchoStrength){
-	// See if parameters are the same
-	if(	(roomLength == newRoomLength) &&
-		(roomWidth == newRoomWidth) &&
-		(roomHeight == newRoomHeight) &&
-		(sourceLength == newSourceLength) &&
-		(sourceWidth == newSourceWidth) &&
-		(sourceHeight == newSourceHeight) &&
-		(micLength == newMicLength) &&
-		(micWidth == newMicWidth) &&
-		(micHeight == newMicHeight) &&
-		(echoStrength == newEchoStrength) )
-	{
-		newRoom = false;
-	} else{
-		newRoom = true;	
-	}
-	return newRoom;
-}
+
 /*
 	Group: Flag Management
+	
+	This is a set of functions to handle toggling various flags	that are checked in <ALFPackage.cpp> in order to avoid duplicate computation. See
+	<Public Members>, and <Private Members> for descriptions of each flag.
 	
 	Function: clearFlags()
 	
 	This function clears all of the flags that are used to specify whether a given value
 	has been calculated on the current frame. See the <Flags> section at the bottom of this page.
 
+
 */
 void AudioChannel::clearFlags() {
 	fftFlag = false;
 	centroidFlag = false;
 	magFlag = false;
+	circularBufferFlag = false;
 
 }
 /*
  Function: getCentroidFlag()
  
- Returns the status off the centroidFlag to determine if the centroid has been calculated
+ Returns the centroidFlag to determine if the centroid has been calculated. True if it has been calcutated. 
  
  Returns:
  
- * centroidFlag - the centroid flag for the current frame
+ The centroid flag for the current frame
  */
 bool AudioChannel::getCentroidFlag() {return centroidFlag;}
 /*
  Function: getCircularBufferFlag()
  
- Returns the status fo the circularBufferFlag to determine if audio output should be routed through the ouput circular buffer
+ Returns the status fo the circularBufferFlag to determine if audio output should be routed through the ouput circular buffer.
  
  Returns:
  
- * circularBufferFlag - the flag indicating if the circular buffer is active
+ The flag indicating true if the circular buffer is active.
  */
 bool AudioChannel::getCircularBufferFlag() {return circularBufferFlag;}
 /*
  Function: getFFTFlag()
  
- Returns the status off the fftFlag to determine if the FFT has been performed on the current frame
+ Returns the status off the fftFlag to determine if the FFT has been computed on the current frame.
  
  Returns:
  
- * fftFlag - the FFT flag for the current frame
+ The FFT flag for the current frame
  */
 bool AudioChannel::getFFTFlag() {return fftFlag;}
 /*
@@ -520,7 +601,7 @@ bool AudioChannel::getFFTFlag() {return fftFlag;}
  
  Returns:
  
- * magFlag - the magnitude flag for the current frame
+ True if the magnitude spectrum has been calculated for the current frame.
  */
 bool AudioChannel::getMagFlag() {return magFlag;}
 /*
@@ -530,17 +611,17 @@ bool AudioChannel::getMagFlag() {return magFlag;}
  
  Parameters:
  
- *flagVal: a boolean indicating whether or not the spectral centroid for the current frame has been performed
+ flagVal - True if the spectral centroid for the current frame has been calculated.
  */
 void AudioChannel::setCentroidFlag(bool flagVal) {centroidFlag = flagVal;}
 /*
  Function: setCircularBufferFlag()
  
- Sets the status of the circularBuffer flag
+ Sets the status of the circularBuffer flag. This is necessary to know which buffer to read from. 
  
  Parameters:
  
- *flagVal: a boolean indicating the status of the inputCircular buffer
+ flagVal - True if there is processing in use that needs to use the output circular buffer.
  */
 void AudioChannel::setCircularBufferFlag(bool flagVal) {circularBufferFlag = flagVal;}
 /*
@@ -550,7 +631,7 @@ void AudioChannel::setCircularBufferFlag(bool flagVal) {circularBufferFlag = fla
  
  Parameters:
  
- *flagVal: a boolean indicating whether or not the fft for the current frame has been computed
+ flagVal - A boolean indicating true if the FFT for the current frame has been computed.
  */
 void AudioChannel::setFFTFlag(bool flagVal) {fftFlag = flagVal;}
 /*
@@ -560,7 +641,7 @@ void AudioChannel::setFFTFlag(bool flagVal) {fftFlag = flagVal;}
  
  Parameters:
  
- *flagVal: a boolean indicating whether or not the magnitude has been computed for the current frame's spectrum
+ flagVal - A boolean indicating true if the magnitude has been computed for the current frame's spectrum
  */
 void AudioChannel::setMagFlag(bool flagVal) {magFlag = flagVal;}
 
@@ -575,42 +656,88 @@ void AudioChannel::setMagFlag(bool flagVal) {magFlag = flagVal;}
 	
 	inAudioFrame - Before a frame can be processed, The DATF class writes samples directly to this buffer via a
 		pointer. The buffer is then used to fill an input Circular Buffer for overlap processing.
+		
+	inAudioFrameSamples - This is the number of samples written to the inAudioFrame. Each frame <DATF->setFrame> sets the number
+		of samples written to the buffer.
+		
 	outAudioFrame - When the ALF requests audioplayback, outAudioFrame is the buffer that provides the output
-		audio samples. The ALF class reads directly from this buffer via a pointer.			
-	inBuffer - an instance of the CircularBuffer class. After inAudioFrame has been initialized by DATF. Methods in
+		audio samples. The ALF class reads directly from this buffer via a pointer. The sample are written directly 
+		to this array in <ALFPackage.cpp->checkOutputBuffer>.
+		
+	outAudioFrameSamples - <ALFPackage.cpp->checkOutputBuffer> writes samples to the outAudioFrame even if there are not enough samples
+		to play back in ActionScript. This number keeps track of how many samples are in the frame so that the proper number of samples
+		are written on the next frame.
+		
+	inBuffer - An instance of the CircularBuffer class. After inAudioFrame has been initialized by DATF. Methods in
 		ALFPackage copy the data to inBuffer. This is required since features require overlap, so past samples are needed
-		for future frames.		
-	outBuffer - an instance of the CircularBuffer class. When the circularBufferFlag is set, a method the checkOutputBuffer
+		for future frames.
+		
+	outBuffer - An instance of the CircularBuffer class. When the circularBufferFlag is set, a method the checkOutputBuffer
 		method in ALF package loads outAudioFrame with samples from this buffer. This is necessary since filtering operations
 		produce sequences that are larger than what can be stored in outAudioFrame (and played back at once by Flash). 
 	
 	Audio Framing:
 	
-	inAudioFrameSamples - the number of smples currently contained in inAudioFrame buffer.	
-	outAudioFrameSamples - the number of samples currently contained in outAudioFrame.
+	inAudioFrameSamples - The number of smples currently contained in inAudioFrame buffer. This value is set in <DATF->setFrame>.
+	outAudioFrameSamples - The number of samples currently contained in outAudioFrame. This value is set in <ALFPackage.cpp->checkOutputBuffer>
 	
 			
 	Spectral Data:
+
+	hannCoefficients - An array containing the the Hann Window coefficients required for a tapered window. Theses values are multiplied
+						by the samples when filling the fftFrame with the current frame's samples.
 	
-	fftFrame - after inAudioFrame is initialized, fftFrame is copied with the same data in order to allow for FFT
-		computation with an in place algorithm. In future revisions, an FFT using separte input output memory will
-		be implemented to avoid the copy.		
-	freqData -  an array containing the allowable frequencies corresponding to the specified FFT size. This is needed
-		for certain feature computation algorithms		
-	magSpectrum - an array that contains the magnitude spectrum computed from fftFrame. This is required for certain
-		feature computation algorithms.		
-	spectrumPrev - an array containing the previous frame's magnitude spectrum. This is required for the spectral
-		flux algorithm.		
-	hannCoefficients - an array containing the the Hann Window coefficients required for a tapered window. The values
-		in this array are multiplied after fftFrame has been initialized and before the FFT computation.
+	fftFrame -		After inAudioFrame is written to from <DATF->setFrame>, sample are written to fftFrame from the inBuffer. The number of samples
+					written	to fftFrame will be twice the hopSize. This occurs in <ALFPackage.cpp->setInputBuffer>. Use this as the input to <DSPFunctions.c->realFFT>
+					
+	fftOut -		This buffer is used as the output from <DSPFuncitons.c->realFFT>.
+	
+	freqData -		An array containing the center frequencies of the bins of the Discrete Fourier Transform. This is needed
+					for certain spectral feature computation algorithms. These values are calculated in <ALFPackage.cpp->initAudioChannel>
+	
+	magSpectrum -	An array that contains the magnitude spectrum computed from the complex spectrum. This is required for certain
+					feature computation algorithms.		
+	
+	spectrumPrev -	An array containing the previous frame's magnitude spectrum. This is required for the spectral
+					flux algorithm.		
+	
+	Twiddle Factors - twiddle, invTwiddle, halfTwiddle, invHalfTwiddle, filterTwiddle, filterInvTwiddle, filterHalfTwiddle, filterInvHalfTwiddle, 
+						doubleTwiddle, invDoubleTwiddle. These arrays contain the various twiddle factors and inverse twiddle factors for various 
+						functions that use different FFT sizes.
+	
+	Filtering:
+	
+	filter -		An array containing the filter coefficients for use with <ALFPackage.cpp->filter>.
+	
+	filterLen -		The number of coefficients in the filter array.
+	
+	filterFFTSize - The size of the FFT needed to perform a frequency domain multiplication of the filter and audio.
+
+	filterArray -	This array is used to compute the realFFT on the filter coefficients for frequency domain multiplication with dataArrayOut.
+
+	filterArrayOut - This is the output from the realFFT computed on filterArray.
+	
+	dataArray -		An array that is used as the input to the realFFT computed in <ALFPackage.cpp->filter>. This is necessary since it may be
+					a different size than fftFrame.
+
+	dataArrayOut -	An array that is used as the output of the realFFT computed in <ALFPackage.cpp->filter>. 	
 	
 	Flags:
 	
-	firstFrame - a boolean indicating if the frame being processed is the first frame. Referenced by functions
-			in ALF package.			
-	bufferReady - a bool indicating if the buffer is ready (may be deprecated, need to check).	
-	stereo -  a bool indicating if the AudioChannel is one of of a stereo pair.
-	channelName - a string indicating the specified name of the AudioChannel.
+	firstFrame -	A boolean indicating if the frame being processed is the first frame. This is necessary becuase we read in 2xhopSize samples on 
+					the first frame. This is used extensively in <ALFPackage.cpp>
+	stereo -		A bool, true if the AudioChannel is one of of a stereo pair.
+
+	filterProcessing -	This flag is true when filtering is in use. This is essential since we must know to play a frame with a few samples and 
+						padded by zeros on the last frame. Otherwise, Actionscript will not issue the AUDIO_COMPLETE event.
+		
+	Other:
+	
+	channelName -	A string indicating the specified name of the AudioChannel.
+	
+	corrData -	An array used in calculating an autocorrelation in <DSPFunctions.c->LPC> and <ALFPackage.cpp->getHarmonics>
+	
+	corrDataOut - An array that is the ouput of the realFFT in the computation of an autocorrelation.
 	
 */
 
@@ -621,23 +748,25 @@ void AudioChannel::setMagFlag(bool flagVal) {magFlag = flagVal;}
 			
 	Audio Framing:
 
-	fs - The sampling rate of the audio under analysis.	
-	hopSize - The size of the current audio frame set by the user's desired sampling rate. Note that spectral
-			  analysis is computed on twice the amount of data, that is a frame is twice the size of the hopSize. 
-			  Only hopSize unique samples are read in on each frame, except the first where twice as many are read in.
-	fftSize - The size of the fft used for computation. In general, this is not the same as hopSize
-		because it requires powers of 2. fftSize = nextpow2(fftSize).	
-	audioOutputSize - not sure what this one is doing here. Deprecate??
-	
+	fs -		The sampling rate of the audio under analysis.	
+	hopSize -	The size of the current audio frame set by the user's desired sampling rate. Note that spectral
+				analysis is computed on twice the amount of data, that is a frame is twice the size of the hopSize. 
+				Only hopSize unique samples are read in on each frame, except the first where twice as many are read in.
+	fftSize -	The size of the fft used for computation. In general, this is not the same as hopSize
+				because it requires powers of 2. It is calculated as the next power of 2 greater or equal to 2*hopSize.
+		
 	Flags:
 	
-	fftFlag - This flag is true when the spectrum has been calculated on the current frame.	
+	fftFlag -	This flag is true when the spectrum has been calculated on the current frame.	
 	centroidFlag - This flag is true when the centroid has been calculated on the current frame.	
 	magFlag - This flag is true when the magnitude spectrum has been calculated on the current frame.		
-	circularBufferFlag - This flag is true when the circular output buffer is being used (i.e. audio 
-		is being synthesized with ALF.
-	
+			circularBufferFlag - This flag is true when the circular output buffer is being used (i.e. audio is being synthesized by reverb).
+
 	Other:
-	
-	float centroidVal - Holds the value of the spectral centroid for the current frame;
+
+	centroidVal - Holds the value of the spectral centroid for the current frame;
+
+	Reverb Parameters - roomLength, roomWidth, roomHeight, sourceLength, sourceWidth, sourceHeight, micLength, micWidth, micHeight, echoStrength.
+						These parameters are used in computing the RIR (<DSPFunctions.c->rir>). The functions <checkRoom> and <setRoom> are used
+						to tell if new room parameters are given and a new RIR should be calculated.
 */

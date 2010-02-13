@@ -38,6 +38,7 @@ public:
 	
 	//Clean/Clear methods
 	void clearInAudioFrame();
+	void clearCorrFrame();
 	void clearFlags();
 	void clearFFTFrame();
 	void resetChannel();	
@@ -77,7 +78,7 @@ public:
 	int inAudioFrameSamples, outAudioFrameSamples;
 	
 	//Storage Data
-	float *fftFrame, *fftOut, *freqData, *magSpectrum, *twiddle, *invTwiddle;
+	float *fftFrame, *fftOut, *freqData, *magSpectrum, *twiddle, *invTwiddle, *halfTwiddle, *invHalfTwiddle, *scratch;
 	float *spectrumPrev, *hannCoefficients, *inAudioFrame, *outAudioFrame;
 	float *roomSize, *sourcePosition, *micPosition;
 	float **inRefPtr, outRefPtr; 
@@ -86,10 +87,13 @@ public:
 	CircularBuffer *outBuffer, *inBuffer;
 		
 	// Filtering arrays/vars
-	float* filter, *filterTwiddle, *filterInvTwiddle;						
+	float* filter, *filterTwiddle, *filterInvTwiddle, *filterHalfTwiddle, *filterInvHalfTwiddle;	
+	float *dataArray, *dataArrayOut,  *filterArray, *filterArrayOut;					
 	int filterLen, filterFFTSize;					
 	int filterProcessing;
 	
+	// Correlation
+	float *corrData, *corrDataOut, *doubleTwiddle, *invDoubleTwiddle;
 };
 
 #endif

@@ -54,18 +54,44 @@ DISP(out1);\
 	Class: DSPFunctions.c
 */
 
-/*
-	Group: Fourier Analysis
-	
+/*******************************************************************************
+ Group: Fourier Analysis
+ 
+ Function: computeTwiddleFactors
+ Pre computes the twiddle factors needed in the FFT function. The twiddle factors
+ are the coeffients which are the roots of unity of the complex unit circle. These 
+ must be calculated for each size of FFT. This is accomplished automatically in ALF
+ for various algorithms.
+ 
+ Parameters:
+ twiddle - array of size 2*fftSize
+ fftSize - fftSize
+ 
+ See Also:
+ 
+	<FFT>, <realFFT>
+ ******************************************************************************/
+void computeTwiddleFactors(float* twiddle, int fftLength, float sign) {
+    int k;
+    float temp[2];
+
+    for (k = 0; k < fftLength / 2; k++) {
+        polarToComplex(1, sign * 2 * PI * (k) / fftLength, temp);
+        twiddle[(2 * k)] = temp[0];
+        twiddle[(2 * k) + 1] = temp[1];
+    }
+}
+/*	
 	Function: getFreq
 	
 	Calculates the frequency associated with each bin of the discrete fourier transform.
 	
 	Parameters:
 	
-		freq - Pointer to an array. The array will be filled with the frequency values.
-		frameSize - The number of points in the discrete fourier transform.
-		fs - The sample rate of the signal to take the transform of.
+		*freq - Pointer to an array. The array will be filled with the frequency values.
+		fftSize - The number of points in the discrete fourier transform.
+		fs - The sample rate of the input signal.
+
 */
 void getFreq(float freq[], int frameSize, int fs){
 
@@ -77,37 +103,98 @@ void getFreq(float freq[], int frameSize, int fs){
 		freq[n] = deltaF*n;
 	}
 }
-/*****************************************************
- Function: magSpec
- Returns the magnitude spectrum of FFT data
+/*******************************************************************************
+ Function: FFT
+ Function for the fast fourier transform of an array with 
+ length fftSize. fftSize must be a power of two.
  
  Parameters:
+ *x - Pointer to the input vector.
+ fftSize - The size of the FFT to be calculated
  
-	fft[] - a pointer to an fft array obtained using realFT and unpacked
-	FFT[] - a pointer to an array, allocated outside, that holds the magnitude
-	fftLength - an int specifying th elength of the FFT
-	useDB - a boolean var indicating to return decibels (1) or no decibels (0)
+ See Also:
+	<FFTHelper>, <realFFT>
+ ******************************************************************************/
+void FFT(float* x, int fftLength, float* twiddles, float* output, int sign) {
+    float* scratch = (float*) malloc(sizeof (float) * (2 * fftLength));
+    FFTHelper(x, fftLength, output, scratch, twiddles, fftLength);
+
+    int i = 0;
+    if (sign == -1) {
+        for (i = 0; i < fftLength; i++) {
+            output[i] /= fftLength;
+            output[i + fftLength] /= fftLength;
+        }
+    }
+
+    free(scratch);
+}
+/*******************************************************************************
+ Function: FFTHelper
+ Calcualtes the fast fourier transform of length N, N must be a power of two
  
- Returns:
-	None, arrays are passed by reference
+ Parameters:
+ *x - Pointer to the input vector.
+ fftSize - Size of the FFT.
+ *X - Pointer to the output vector.
+ scratch - Empty array of size fftSize for use in computation of the FFT.
+ twiddle - Pointer to an array of twiddle values.
+ twiddleLength - Original fft length.
  
- ****************************************************/
-void magSpectrum(float fft[], float FFT[], int fftLength, int useDB){
-	
-	unsigned int i,j = 0;
-		
-	if(useDB) { 
-		for(i = 0; i <= fftLength; i = i + 2){
-			FFT[j] = 20*log10(fabs(sqrt(pow(fft[i], 2) + pow(fft[i + 1], 2)))); 
-			j++;
-		}
-	}else{
-		for(i = 0; i <= fftLength; i = i + 2){
-			FFT[j] = sqrt(pow(fft[i], 2) + pow(fft[i + 1], 2));		
-			j++;
-		}
-	}	
-	
+ See Also:
+	<FFT>, <realFFT>
+ ******************************************************************************/
+void FFTHelper(float* x, int fftLength, float* X, float* scratch,
+        float* twiddle, int imagStart) {
+    int k, m, n;
+    int skip;
+    /* int imagStart = fftLength; */
+    int evenItr = fftLength & 0x55555555;
+
+    float* E, *D;
+    float* Xp, *Xp2, *XStart;
+    float temp[2], temp2[2];
+
+    /* Special Case */
+    if (fftLength == 1) {
+        X[0] = x[0];
+        X[1] = x[imagStart];
+        return;
+    }
+
+    E = x;
+
+    for (n = 1; n < fftLength; n *= 2) {
+        XStart = evenItr ? scratch : X;
+        skip = (fftLength) / (2 * n);
+        Xp = XStart;
+        Xp2 = XStart + (fftLength / 2);
+        for (k = 0; k != n; k++) {
+
+            temp[0] = twiddle[2 * (k * skip)];
+            temp[1] = twiddle[2 * (k * skip) + 1];
+
+            for (m = 0; m != skip; ++m) {
+                D = E + (skip);
+
+                temp2[0] = (*D * temp[0]) - (*(D + imagStart) * temp[1]);
+                temp2[1] = (*D * temp[1]) + (*(D + imagStart) * temp[0]);
+
+                *Xp = *E + temp2[0];
+                *(Xp + imagStart) = *(E + imagStart) + temp2[1];
+
+                *Xp2 = *E - temp2[0];
+                *(Xp2 + imagStart) = *(E + imagStart) - temp2[1];
+
+                Xp = Xp + 1;
+                Xp2 = Xp2 + 1;
+                E = E + 1;
+            }
+            E = E + skip;
+        }
+        E = XStart;
+        evenItr = !evenItr;
+    }
 }
 /************************************************************
  Function: freqResp 
@@ -124,6 +211,10 @@ void magSpectrum(float fft[], float FFT[], int fftLength, int useDB){
  
  Returns:
  None, values are passed by reference
+ 
+ See Also:
+ 
+	<LPC>
  *************************************************************/
 void freqResp(float *lpCE, float *resp, int fftSize, int numRows, int numCols, int useDB) {
 	
@@ -150,9 +241,305 @@ void freqResp(float *lpCE, float *resp, int fftSize, int numRows, int numCols, i
 		}
 	}
 }
-/**********************************************************
- Group: DSP Algorithms
+/*****************************************************
+ Function: magSpec
+ Calculates the magnitude spectrum from the complex Fourier transform.
+  
+ Parameters:
  
+	*fft - A pointer to an fft array obtained using realFFT and unpacked.
+	*FFT - A pointer to an array, allocated outside, that will hold the magnitude.
+	fftSize - An int specifying the length of the FFT.
+	useDB - A boolean var indicating to return decibels (1) or no decibels (0).
+ 
+ Returns:
+	None, arrays are passed by reference
+	
+ See Also:
+	<FFT>, <realFFT>, <unpackFrequency>
+ 
+ ****************************************************/
+void magSpectrum(float fft[], float FFT[], int fftLength, int useDB){
+	
+	unsigned int i,j = 0;
+		
+	if(useDB) { 
+		for(i = 0; i <= fftLength; i = i + 2){
+			FFT[j] = 20*log10(fabs(sqrt(pow(fft[i], 2) + pow(fft[i + 1], 2)))); 
+			j++;
+		}
+	}else{
+		for(i = 0; i <= fftLength; i = i + 2){
+			FFT[j] = sqrt(pow(fft[i], 2) + pow(fft[i + 1], 2));		
+			j++;
+		}
+	}	
+	
+}
+/*
+	Function: pack
+	
+	This function is used to put the data in the format it was in after calling realFFT. If this is not called before
+	performing an inverse Fourier transform, the proper values will not be calculated.
+	
+	Parameters:
+	
+		*in - A pointer to an array that contains the output data from <realFFT> after computing the *INVERSE*.
+		fftSize - The number of FFT points used in calculating the spectrum.
+	
+	See Also:
+	
+		<unpackFrequency>, <unpackTime> <realFFT>
+*/
+void pack(float* in, int fftLength) {
+    int k;	
+		
+	in[1] = in[fftLength];		// Set second element to the real part at fs/2
+	in[fftLength] = 0;			// Set imaginary component at fs/2 to zero
+}
+/*******************************************************************************
+ Function: realFFT
+ 
+ Function for the fast fourier transform of a real valued array with length fftSize - fftSize must be a power of two.
+ The output of RealFFT is in the form of Re[0], Re[1] ... Re[N/2], Im[0], Im[1], ..., Im[N/2]. All the real values
+ are in order followed by the imaginary values. 
+ 
+ Parameters:
+ *x - Pointer to the input array.
+ *X - Pointer to the output array.
+ fftSize - Size of the fft 
+ *twiddles - The twiddle factors for the associated fftSize.
+ *halfTwiddles - The half twiddle factors for half the fftSize.
+ *scratch - An array used for storing values throughout the computation
+ sign - Indcates a forward transform (1) or an inverse transform (-1).
+ 
+ See Also:
+	<pack>, <unpackFrequency>, <unpackTime>
+ ******************************************************************************/
+void realFFT(float* x, float *out, int fftLength, float* twiddles, float* halfTwiddles, float* scratch, int sign) {
+    float xNew[fftLength];
+    //float scratch[2 * fftLength];
+    //float halfTwiddles[fftLength];
+
+    int imagStart = fftLength / 2;
+    int half = fftLength / 2;
+    int quarter = half / 2;
+    int i;
+
+    /* Rearrange the original array. Even indexes have become the real part and
+     * the odd indicies have become the imaginary parts */
+    for (i = 0; i < half; i++) {
+        xNew[i] = x[2 * i];
+        xNew[i + (imagStart)] = x[2 * i + 1];
+    }
+
+
+    /* If we are taking the FFT */
+    if (sign == 1) {
+
+        //computeTwiddleFactors(halfTwiddles, half, sign);
+        /* FFT of new array */
+        FFTHelper(xNew, half, out, scratch, halfTwiddles, imagStart);
+
+
+        /* Manipulate tempOut for correct FFT */
+        float temp1[2];
+        float temp2[2];
+
+        for (i = 1; i < quarter; i++) {
+            temp1[0] = out[i];
+            temp1[1] = out[i + (imagStart)];
+
+            temp2[0] = out[half - i];
+            temp2[1] = out[half - i + (imagStart)];
+
+            out[i] = (0.5)*(temp1[0] + temp2[0]
+                    + sign * twiddles[2 * i]*(temp1[1] + temp2[1])
+                    + twiddles[(2 * i) + 1]*(temp1[0] - temp2[0]));
+
+            out[i + (imagStart)] = (0.5)*(temp1[1] - temp2[1]
+                    - sign * twiddles[2 * i]*(temp1[0] - temp2[0])
+                    + twiddles[(2 * i) + 1]*(temp1[1] + temp2[1]));
+
+            out[half - i] = (0.5)*(temp1[0] + temp2[0]
+                    - sign * twiddles[2 * i]*(temp1[1] + temp2[1])
+                    - twiddles[(2 * i) + 1]*(temp1[0] - temp2[0]));
+
+            out[half - i + (imagStart)] = (0.5)*(-temp1[1] + temp2[1]
+                    - sign * twiddles[2 * i]*(temp1[0] - temp2[0])
+                    + twiddles[(2 * i) + 1]*(temp1[1] + temp2[1]));
+        }
+
+        temp1[0] = out[0];
+        temp1[1] = out[(imagStart)];
+
+        out[0] = temp1[0] + temp1[1];
+        out[(imagStart)] = temp1[0] - temp1[1];
+    }
+
+    /* Inverse FFT of real signal */
+    if (sign == -1) {
+
+        /* Manipulate tempOutput for correct FFT */
+        float temp1[2];
+        float temp2[2];
+
+        for (i = 1; i < quarter; i++) {
+            temp1[0] = xNew[i];
+            temp1[1] = xNew[i + (imagStart)];
+
+            temp2[0] = xNew[half - i];
+            temp2[1] = xNew[half - i + (imagStart)];
+
+            xNew[i] = (0.5)*(temp1[0] + temp2[0]
+                    + sign * twiddles[2 * i] * (temp1[1] + temp2[1])
+                    - twiddles[(2 * i) + 1] * (temp1[0] - temp2[0]));
+
+            xNew[i + (imagStart)] = (0.5)*(temp1[1] - temp2[1]
+                    - sign * twiddles[2 * i]*(temp1[0] - temp2[0])
+                    - twiddles[(2 * i) + 1]*(temp1[1] + temp2[1]));
+
+            xNew[half - i] = (0.5)*(temp1[0] + temp2[0]
+                    - sign * twiddles[2 * i]*(temp1[1] + temp2[1])
+                    + twiddles[(2 * i) + 1]*(temp1[0] - temp2[0]));
+
+            xNew[half - i + (imagStart)] = (0.5)*(-temp1[1] + temp2[1]
+                    - sign * twiddles[2 * i]*(temp1[0] - temp2[0])
+                    - twiddles[(2 * i) + 1]*(temp1[1] + temp2[1]));
+        }
+
+        temp1[0] = xNew[0];
+        temp1[1] = xNew[(imagStart)];
+
+        xNew[0] = temp1[0] + temp1[1];
+        xNew[(imagStart)] = temp1[0] - temp1[1];
+
+        xNew[0] *= (0.5);
+        xNew[imagStart] *= (0.5);
+
+        //computeTwiddleFactors(halfTwiddles, half, sign);
+        FFTHelper(xNew, half, out, scratch, halfTwiddles, imagStart);
+    }
+}
+/*
+	Function: unpackFrequency
+	
+	The output of RealFFT is in the form of Re[0], Re[1] ... Re[N/2], Im[0], Im[1], ..., Im[N/2]. 
+	
+	This function changes the order to Re[0], Im[0], Re[1], Im[1], ... Re[N/2], Im[N/2]
+	
+	Parameters:
+	
+		*in - A pointer to an array that contains the output data from <realFFT>
+		fftSize - The length of the FFT calculated.
+		
+	See Also:
+	
+		<pack>, <realFFT>, <unpackTime>
+*/
+void unpackFrequency(float* in, int fftLength) {
+
+	int k;
+	float *temp = (float *) malloc(sizeof(float)*(fftLength*2));
+    for (k = 0; k <= fftLength + 2; k++) {
+        temp[k] = in[k];
+    }
+	
+    for (k = 0; k <= fftLength/2; k++) {
+        in[2*k] = temp[k];
+		in[2*k + 1] = temp[k + fftLength / 2];
+    }
+
+	in[1] = 0;
+	in[2*fftLength - 1] = temp[fftLength];
+	free(temp);
+}
+/*
+	Function: unpackTime
+	
+	This function reorders the values to be in the proper order after resynthesis (IFFT).
+	
+	Parameters:
+	
+		*in - A pointer to an array that contains the output data from <realFFT>
+		fftSize - The length of the FFT calculated.
+	
+	See Also:
+		<pack>, <unpackFrequency>, <realFFT>
+*/
+void unpackTime(float* in, int fftLength) {
+
+	int k;
+	float *temp = (float *) malloc(sizeof(float)*(fftLength*2));
+    for (k = 0; k <= fftLength + 2; k++) {
+        temp[k] = in[k];
+    }
+
+    for (k = 0; k <= fftLength/2; k++) {
+        in[2*k] = temp[k];
+		in[2*k + 1] = temp[k + fftLength / 2];
+    }
+	
+	in[2*fftLength - 1] = temp[fftLength];
+	free(temp);
+}
+
+
+/***************************************************************************
+Group: DSP Algorithms
+
+Function: Autocorr
+
+Computes the autocorrelation of a given sequence, which is just 
+its cross correlation with itself. The algorithm works by taking
+the FFT of the sequence and multiplying the FFT by it's complex conjugate. The
+inverse FFT of this real valued FFT yields half of the autocorrelation sequence,
+such that the first value corresponds to zero-lag.
+
+Parameters:
+	audioSeg - a poitner to an array containing the frame of audio we're interested in
+	fftSize  - the length of audioSeg (and the fftSize)
+	corrData - a pointer to the array that will hold the correlation data. Must be initialized to
+		2*fftSize in order to avoid circular convolution.
+	corrDataOut - a pointer to the array holding the result of the FFT
+	twid - pointer to twiddle factors
+	invTwid - pointer to inverse twiddle factors
+	halfTwid - pointer to the half twiddle factors
+	invHalfTwid - pointer to the inverse half twiddle factors
+	scratch - pointer to an arrray holding the scratch data for the FFT
+
+Returns:
+	no data: all pass by reference
+
+*****************************************************************/
+void autoCorr(float *audioSeg, int fftSize, float *corrData, float* corrDataOut, float *twid,
+			  float *invTwid, float *halfTwid, float* invHalfTwid, float *scratch) {
+		int i;
+		
+		//copy data in to corrData
+		for (i = 0; i < fftSize; i++) { corrData[i] = audioSeg[i]; }
+				  
+		// FFT of frame
+		realFFT(corrData, corrDataOut, fftSize*2, twid, halfTwid, scratch, 1);
+		unpackFrequency(corrDataOut, fftSize*2);
+				  
+		// Now multiply the FFT by its conjugate....
+		float RE, IM;
+		for(i = 0; i < (fftSize*2); i = i+2) {
+			RE = corrDataOut[i];
+			IM = corrDataOut[i+1];
+			corrDataOut[i] = RE * RE - (IM * -IM);
+			corrDataOut[i+1] = 0;
+		}	  
+		//repack the FFT and take the ifft		
+		pack(corrDataOut, (fftSize*2));
+		realFFT(corrDataOut, corrData, (fftSize*2), invTwid, invHalfTwid, scratch, -1);
+		unpackTime(corrData, fftSize*2);
+		// Rescale the FFT to compensate for frameSize weighting
+		float scaleFactor = 2.0/(fftSize*2);
+		for(i = 0; i < fftSize*2; i++) { corrData[i] = corrData[i] * (scaleFactor); }
+}
+/**********************************************************
  Function: iirFilter  
  Performs filtering with a provided transfer function based on a direct form II -transpose structure
  
@@ -215,118 +602,60 @@ void iirFilter(float *input, float *output, int seqLen, float gain, float *numCo
  order - the desired order of LP analysis
  lpCE - a pointer for a two dimensional array containing gain and coefficients (Coefficients 
  in first row, gain in second)
- numRows - the number of rows in lpCE
- numCols - the number of cols in lpCE
  
  Returns:
  Returns an integer indicating whether or not an error ocurred in 
  the algorithm (1 = error, 0 = no error)
  **********************************************************************/
-int LPC(float *audioSeg, int audioLength, int order, float *lpCE, int numRows, int numCols) {
+int LPC(float *corrData, int audioLength, int order, float *lpCE){
 	int error = 0;
-	int c, p, i;
-	
 	if (order < 0)	error = 1;					//can't have negative order prediction coefficients
 	else if (order > audioLength) error = 1;	//can't have more prediction coefficients than samples
 	else {
-		
-		/**************************AUTOCORRELATION CODE HERE*****************************************
-		 *	the following implementation utilizes the FFT algorithms to compute the autocorrelation of
-		 *		a sequence. The data is copied into a new array which is padded to twice the length
-		 *		with trailing zeros to avoid the circular convolution.
-		 ********************************************************************************************/
-		
-		//needs to be twice as long to account for the circular convolutiion. The plus 2 is for repacking the FFT
-		float *corrData = (float * ) calloc((audioLength*2), sizeof(float));
-		float *corrDataOut = (float * ) calloc((audioLength*2), sizeof(float));
-		float *twid = (float * ) calloc(audioLength*2, sizeof(float));
-		float *invTwid = (float * ) calloc(audioLength*2, sizeof(float));
-		//now need to copy the audio into the array
-		for (i = 0; i < audioLength; i++) {
-			corrData[i] = audioSeg[i];
-		}
-		
-		computeTwiddleFactors(twid, audioLength*2, 1);
-		realFFT(corrData, audioLength*2, twid, corrDataOut, 1);
-		unpackFrequency(corrDataOut, audioLength*2);
 
-
-		//now multiply the FFT by its conjugate....
-		float RE, IM;
-		for(i = 0; i < (audioLength*2); i = i+2) {
-			RE = corrDataOut[i];
-			IM = corrDataOut[i+1];
-			corrDataOut[i] = RE * RE - (IM * -IM);
-			corrDataOut[i+1] = IM * RE + (-IM * RE);
-		}
+		//*********************************** LEVINSON RECURSION FOLLOWS *********************************		
+		//STEP 1: initialize the variables
+		float lpcTemp[order];					//this array stores the partial correlaton coefficients
+		float temp[order];						//temporary data for the recursion
+		float temp0;
+		float A = 0;							//this is the gain computed from the predicition error
+		float E, ki, sum;						//zeroth order predictor, weighting factor, sum storage
+		int i, j;
 		
-		//repack the FFT and take the ifft
-		computeTwiddleFactors(invTwid, audioLength*2, -1);
-		pack(corrDataOut, (audioLength*2));
-		realFFT(corrDataOut, (audioLength*2), invTwid, corrData, -1);			
-	
-		//rescale the FFT to compensate for frameSize weighting
-		float scaleFactor = 2.0/(audioLength*2);
-		for(i = 0; i < audioLength; i++) {
-			corrData[i] = corrData[i] * scaleFactor;
-		}
+		for(i = 0; i < order; i++) { lpcTemp[i] = 0.0; temp[i] = 0.0; } //init arrays to zeros
 		
-		//***********************************LEVINSON RECURSION FOLLOWS*********************************
-		double lpcTemp[order + 1][order + 1];			//this array stores the partial correlaton coefficients
-		double A = 0;									//this is the gain computed from the predicition error
-		double E;		 								//this is the zeroth order predictor
-		double ki;										//initial value of the weighting factor
-		double sum;										//temp variable for storing values
-		int j = 0;
+		E = corrData[0];						//for the zeroth order predictor
+		ki = 0;
 		
-		for(c = 0; c < order+1; c++) {					//initialize the lpc Temp array to zeros
-			for(p = 0; p < order + 1; p++){				//for troubleshooting purposes
-				lpcTemp[c][p] = 0;
-			}
-		}
+		//STEP 2:5 follows
 		
-		lpcTemp[0][0] = 0;									//initializations before recursion
-		E = corrData[0];									//for the zeroth order predictor
-		
-		for(i = 1; i < order + 1; i++) {					//begin calculating the partial correlation coefficients
-			sum = 0;										//temp sum for the calculation
-			ki = 0;											//initial value of the weighting factor
-			//compute the terms under the summation
-			for(j = 1; j <= i - 1; j++){
-				sum = sum + lpcTemp[j][i-1]*corrData[i-j];
-			}
-			ki = (corrData[i] - sum)/E;						//compute the weighting factor
-			lpcTemp[i][i] = ki;								//store the weighting factor
+		for(i = 0; i < order; i++) {
+			temp0 = corrData[i+1];
 			
-			//recursively compute partio corr. coefficients
-			for(j = 1;j <= i - 1; j++){
-				lpcTemp[j][i] = lpcTemp[j][i-1] - (ki*lpcTemp[i-j][i-1]);
-			}
-			E = (1 - pow(ki,2))*E;							//updatethe prediction error
+			for(j = 0; j < i; j++) { temp0 -= lpcTemp[j]*corrData[i - j]; }
+			if(fabs(temp0) >= E){ break; }
+			
+			lpcTemp[i] = ki = temp0/E;
+			E -= temp0*ki;
+			
+			//copy the data over so we can overwrite it when needed
+			for(j=0; j < i; j++){ temp[j] = lpcTemp[j]; }
+			
+			for(j=0; j < i; j++){ lpcTemp[j] -= ki*temp[i-j-1]; }
 		}
-		
+				
+		//STEP 6: compute the gain associated with the prediction error
 		sum = 0;											//assign the pth order coefficients to an output vector and compute the gain A
-		for(p = 1; p < (order + 1); p++){
-			sum = sum + lpcTemp[p][order]*corrData[p];
-		}
+		for(i = 0; i < order; i++){ sum += lpcTemp[i]*corrData[i + 1]; }
 		A = corrData[0] - sum;
 		A = sqrt(A);
 		
-		for(i = 0; i < numRows; i++) {
-			for(j = 1; j < numCols; j++) {
-				if(i == 0){
-					*(lpCE + ((numCols*i) + j)) = -lpcTemp[j][order];
-				}
-			}
-		}
-		//need to manually set the gain and the leading coefficient of 1
+		//ready the lpCE array for the getHarmonics function
+		*(lpCE + order + 1) = A;
 		*lpCE = 1;
-		*(lpCE + numCols) = A;
 		
-		free(corrData);
-		free(corrDataOut);
-		free(twid);
-		free(invTwid);
+		//assign to output array
+		for(i = 0; i < order; i++){ *(lpCE + i + 1) = -lpcTemp[i]; }
 	}
 	return error;
 }
@@ -477,6 +806,8 @@ float* rir(int fs, float refCo, float mic[], float room[], float src[], int rirL
 	
 	return rirArr;	
 }
+
+
 /*********************************************************************
  Group: Spectral Features
  Function: bandwidth
@@ -683,9 +1014,6 @@ int nextPowerOf2(int number){
 	
     return number;
 }
-
-
-
 /*******************************************************************************
  Function: polarToComplex
  Converts polar numbers to complex numbers
@@ -698,296 +1026,4 @@ int nextPowerOf2(int number){
 void polarToComplex(float mag, float phase, float* ans) {
     ans[0] = mag * cos(phase);
     ans[1] = mag * sin(phase);
-}
-/*******************************************************************************
- Function: computeTwiddleFactors
- Pre computes the twiddle factors needed in the FFTfunction
- 
- Parameters:
- twiddle - array of size 2*fftLength
- fftLength - fftLength
- ******************************************************************************/
-void computeTwiddleFactors(float* twiddle, int fftLength, float sign) {
-    int k;
-    float temp[2];
-
-    for (k = 0; k < fftLength / 2; k++) {
-        polarToComplex(1, sign * 2 * PI * (k) / fftLength, temp);
-        twiddle[(2 * k)] = temp[0];
-        twiddle[(2 * k) + 1] = temp[1];
-    }
-}
-/*******************************************************************************
- Function: FFT
- Function for the fast fourier transform of an array with 
- length fftLength. fftLength must be a power of two.
- 
- Parameters:
- x - input vector
- fftLength - length of fft (varies with each iteration
- ******************************************************************************/
-void FFT(float* x, int fftLength, float* twiddles, float* output, int sign) {
-    float* scratch = (float*) malloc(sizeof (float) * (2 * fftLength));
-    FFTHelper(x, fftLength, output, scratch, twiddles, fftLength);
-
-    int i = 0;
-    if (sign == -1) {
-        for (i = 0; i < fftLength; i++) {
-            output[i] /= fftLength;
-            output[i + fftLength] /= fftLength;
-        }
-    }
-
-    free(scratch);
-}
-/*******************************************************************************
- Function: realFFT
- Function for the fast fourier transform of a real valued array
- with length fftLength. fftLength must be a power of two.
- 
- Parameters:
- x - input vector
- fftLength - length of fft (varies with each iteration
- ******************************************************************************/
-void realFFT(float* x, int fftLength, float* twiddles, float *out, int sign) {
-
-    float xNew[fftLength];
-    float scratch[2 * fftLength];
-    float halfTwiddles[fftLength];
-
-    int imagStart = fftLength / 2;
-    int half = fftLength / 2;
-    int quarter = half / 2;
-    int i;
-
-    /* Rearrange the original array. Even indexes have become the real part and
-     * the odd indicies have become the imaginary parts */
-    for (i = 0; i < half; i++) {
-        xNew[i] = x[2 * i];
-        xNew[i + (imagStart)] = x[2 * i + 1];
-    }
-
-
-    /* If we are taking the FFT */
-    if (sign == 1) {
-
-        computeTwiddleFactors(halfTwiddles, half, sign);
-        /* FFT of new array */
-        FFTHelper(xNew, half, out, scratch, halfTwiddles, imagStart);
-
-
-        /* Manipulate tempOut for correct FFT */
-        float temp1[2];
-        float temp2[2];
-
-        for (i = 1; i < quarter; i++) {
-            temp1[0] = out[i];
-            temp1[1] = out[i + (imagStart)];
-
-            temp2[0] = out[half - i];
-            temp2[1] = out[half - i + (imagStart)];
-
-            out[i] = (0.5)*(temp1[0] + temp2[0]
-                    + sign * twiddles[2 * i]*(temp1[1] + temp2[1])
-                    + twiddles[(2 * i) + 1]*(temp1[0] - temp2[0]));
-
-            out[i + (imagStart)] = (0.5)*(temp1[1] - temp2[1]
-                    - sign * twiddles[2 * i]*(temp1[0] - temp2[0])
-                    + twiddles[(2 * i) + 1]*(temp1[1] + temp2[1]));
-
-            out[half - i] = (0.5)*(temp1[0] + temp2[0]
-                    - sign * twiddles[2 * i]*(temp1[1] + temp2[1])
-                    - twiddles[(2 * i) + 1]*(temp1[0] - temp2[0]));
-
-            out[half - i + (imagStart)] = (0.5)*(-temp1[1] + temp2[1]
-                    - sign * twiddles[2 * i]*(temp1[0] - temp2[0])
-                    + twiddles[(2 * i) + 1]*(temp1[1] + temp2[1]));
-        }
-
-        temp1[0] = out[0];
-        temp1[1] = out[(imagStart)];
-
-        out[0] = temp1[0] + temp1[1];
-        out[(imagStart)] = temp1[0] - temp1[1];
-    }
-
-    /* Inverse FFT of real signal */
-    if (sign == -1) {
-
-        /* Manipulate tempOutput for correct FFT */
-        float temp1[2];
-        float temp2[2];
-
-        for (i = 1; i < quarter; i++) {
-            temp1[0] = xNew[i];
-            temp1[1] = xNew[i + (imagStart)];
-
-            temp2[0] = xNew[half - i];
-            temp2[1] = xNew[half - i + (imagStart)];
-
-            xNew[i] = (0.5)*(temp1[0] + temp2[0]
-                    + sign * twiddles[2 * i] * (temp1[1] + temp2[1])
-                    - twiddles[(2 * i) + 1] * (temp1[0] - temp2[0]));
-
-            xNew[i + (imagStart)] = (0.5)*(temp1[1] - temp2[1]
-                    - sign * twiddles[2 * i]*(temp1[0] - temp2[0])
-                    - twiddles[(2 * i) + 1]*(temp1[1] + temp2[1]));
-
-            xNew[half - i] = (0.5)*(temp1[0] + temp2[0]
-                    - sign * twiddles[2 * i]*(temp1[1] + temp2[1])
-                    + twiddles[(2 * i) + 1]*(temp1[0] - temp2[0]));
-
-            xNew[half - i + (imagStart)] = (0.5)*(-temp1[1] + temp2[1]
-                    - sign * twiddles[2 * i]*(temp1[0] - temp2[0])
-                    - twiddles[(2 * i) + 1]*(temp1[1] + temp2[1]));
-        }
-
-        temp1[0] = xNew[0];
-        temp1[1] = xNew[(imagStart)];
-
-        xNew[0] = temp1[0] + temp1[1];
-        xNew[(imagStart)] = temp1[0] - temp1[1];
-
-        xNew[0] *= (0.5);
-        xNew[imagStart] *= (0.5);
-
-        computeTwiddleFactors(halfTwiddles, half, sign);
-        FFTHelper(xNew, half, out, scratch, halfTwiddles, imagStart);
-//		for(i = 0; i < fftLength; i++){
-//			out[i] = out[i]/(fftLength/2);
-//		}	
-    }
-}
-/*******************************************************************************
- Function: FFTHelper
- Calcualtes the fast fourier transform of length N, N must be a power of two
- 
- Parameters
- x - input vector
- fftLength - length of fft (varies with each iteration
- X - output vector
- scratch - empty array of size fftLength for use in the function
- twiddle - array of twiddle values
- twiddleLength - original fft length (never changes)
- ******************************************************************************/
-void FFTHelper(float* x, int fftLength, float* X, float* scratch,
-        float* twiddle, int imagStart) {
-    int k, m, n;
-    int skip;
-    /* int imagStart = fftLength; */
-    int evenItr = fftLength & 0x55555555;
-
-    float* E, *D;
-    float* Xp, *Xp2, *XStart;
-    float temp[2], temp2[2];
-
-    /* Special Case */
-    if (fftLength == 1) {
-        X[0] = x[0];
-        X[1] = x[imagStart];
-        return;
-    }
-
-    E = x;
-
-    for (n = 1; n < fftLength; n *= 2) {
-        XStart = evenItr ? scratch : X;
-        skip = (fftLength) / (2 * n);
-        Xp = XStart;
-        Xp2 = XStart + (fftLength / 2);
-        for (k = 0; k != n; k++) {
-
-            temp[0] = twiddle[2 * (k * skip)];
-            temp[1] = twiddle[2 * (k * skip) + 1];
-
-            for (m = 0; m != skip; ++m) {
-                D = E + (skip);
-
-                temp2[0] = (*D * temp[0]) - (*(D + imagStart) * temp[1]);
-                temp2[1] = (*D * temp[1]) + (*(D + imagStart) * temp[0]);
-
-                *Xp = *E + temp2[0];
-                *(Xp + imagStart) = *(E + imagStart) + temp2[1];
-
-                *Xp2 = *E - temp2[0];
-                *(Xp2 + imagStart) = *(E + imagStart) - temp2[1];
-
-                Xp = Xp + 1;
-                Xp2 = Xp2 + 1;
-                E = E + 1;
-            }
-            E = E + skip;
-        }
-        E = XStart;
-        evenItr = !evenItr;
-    }
-}
-
-/*
-	Function: pack
-	
-	Parameters:
-	
-		*in - A pointer to an array that contains the output data from <realFFT> after computing the *INVERSE*.
-		fftLength - The number of FFT points used in calculating the spectrum.
-*/
-void pack(float* in, int fftLength) {
-    int k;	
-		
-	in[1] = in[fftLength];		// Set second element to the real part at fs/2
-	in[fftLength] = 0;			// Set imaginary component at fs/2 to zero
-}
-/*
-	Function: unpackFrequency
-	
-	The output of RealFFT is in the form of Re[0], Re[1] ... Re[N/2], Im[0], Im[1], ..., Im[N/2]. This function
-	changes the order to Re[0], Im[0], Re[1], Im[1], ... Re[N/2], Im[N/2]
-	
-	Parameters:
-	
-		*in - A pointer to an array that contains the output data from <realFFT>
-		fftLength - The length of the FFT calculated.
-*/
-void unpackFrequency(float* in, int fftLength) {
-
-	int k;
-	float *temp = (float *) malloc(sizeof(float)*(fftLength*2));
-    for (k = 0; k <= fftLength + 2; k++) {
-        temp[k] = in[k];
-    }
-	
-    for (k = 0; k <= fftLength/2; k++) {
-        in[2*k] = temp[k];
-		in[2*k + 1] = temp[k + fftLength / 2];
-    }
-
-	in[1] = 0;
-	in[2*fftLength - 1] = temp[fftLength];
-	free(temp);
-}
-/*
-	Function: unpackTime
-	
-	This function reorders the values to be in the proper order after resynthesis.
-	
-	Parameters:
-	
-		*in - A pointer to an array that contains the output data from <realFFT>
-		fftLength - The length of the FFT calculated.
-*/
-void unpackTime(float* in, int fftLength) {
-
-	int k;
-	float *temp = (float *) malloc(sizeof(float)*(fftLength*2));
-    for (k = 0; k <= fftLength + 2; k++) {
-        temp[k] = in[k];
-    }
-
-    for (k = 0; k <= fftLength/2; k++) {
-        in[2*k] = temp[k];
-		in[2*k + 1] = temp[k + fftLength / 2];
-    }
-	
-	in[2*fftLength - 1] = temp[fftLength];
-	free(temp);
 }
