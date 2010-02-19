@@ -57,7 +57,7 @@ DISP(out1);\
 /*******************************************************************************
  Group: Fourier Analysis
  
- Function: computeTwiddleFactors
+ Function: computeTwiddleFactors()
  Pre computes the twiddle factors needed in the FFT function. The twiddle factors
  are the coeffients which are the roots of unity of the complex unit circle. These 
  must be calculated for each size of FFT. This is accomplished automatically in ALF
@@ -82,7 +82,7 @@ void computeTwiddleFactors(float* twiddle, int fftLength, float sign) {
     }
 }
 /*	
-	Function: getFreq
+	Function: getFreq()
 	
 	Calculates the frequency associated with each bin of the discrete fourier transform.
 	
@@ -104,7 +104,7 @@ void getFreq(float freq[], int frameSize, int fs){
 	}
 }
 /*******************************************************************************
- Function: FFT
+ Function: FFT()
  Function for the fast fourier transform of an array with 
  length fftSize. fftSize must be a power of two.
  
@@ -130,7 +130,7 @@ void FFT(float* x, int fftLength, float* twiddles, float* output, int sign) {
     free(scratch);
 }
 /*******************************************************************************
- Function: FFTHelper
+ Function: FFTHelper()
  Calcualtes the fast fourier transform of length N, N must be a power of two
  
  Parameters:
@@ -197,7 +197,7 @@ void FFTHelper(float* x, int fftLength, float* X, float* scratch,
     }
 }
 /************************************************************
- Function: freqResp 
+ Function: freqResp()
  Calculates the frequency response from an ALL POLE transfer function
  
  Parameters:
@@ -242,7 +242,7 @@ void freqResp(float *lpCE, float *resp, int fftSize, int numRows, int numCols, i
 	}
 }
 /*****************************************************
- Function: magSpec
+ Function: magSpec()
  Calculates the magnitude spectrum from the complex Fourier transform.
   
  Parameters:
@@ -277,7 +277,7 @@ void magSpectrum(float fft[], float FFT[], int fftLength, int useDB){
 	
 }
 /*
-	Function: pack
+	Function: pack()
 	
 	This function is used to put the data in the format it was in after calling realFFT. If this is not called before
 	performing an inverse Fourier transform, the proper values will not be calculated.
@@ -298,7 +298,7 @@ void pack(float* in, int fftLength) {
 	in[fftLength] = 0;			// Set imaginary component at fs/2 to zero
 }
 /*******************************************************************************
- Function: realFFT
+ Function: realFFT()
  
  Function for the fast fourier transform of a real valued array with length fftSize - fftSize must be a power of two.
  The output of RealFFT is in the form of Re[0], Re[1] ... Re[N/2], Im[0], Im[1], ..., Im[N/2]. All the real values
@@ -422,7 +422,7 @@ void realFFT(float* x, float *out, int fftLength, float* twiddles, float* halfTw
     }
 }
 /*
-	Function: unpackFrequency
+	Function: unpackFrequency()
 	
 	The output of RealFFT is in the form of Re[0], Re[1] ... Re[N/2], Im[0], Im[1], ..., Im[N/2]. 
 	
@@ -455,7 +455,7 @@ void unpackFrequency(float* in, int fftLength) {
 	free(temp);
 }
 /*
-	Function: unpackTime
+	Function: unpackTime()
 	
 	This function reorders the values to be in the proper order after resynthesis (IFFT).
 	
@@ -486,9 +486,10 @@ void unpackTime(float* in, int fftLength) {
 
 
 /***************************************************************************
+
 Group: DSP Algorithms
 
-Function: Autocorr
+Function: autoCorr()
 
 Computes the autocorrelation of a given sequence, which is just 
 its cross correlation with itself. The algorithm works by taking
@@ -540,7 +541,7 @@ void autoCorr(float *audioSeg, int fftSize, float *corrData, float* corrDataOut,
 		for(i = 0; i < fftSize*2; i++) { corrData[i] = corrData[i] * (scaleFactor); }
 }
 /**********************************************************
- Function: iirFilter  
+ Function: iirFilter() 
  Performs filtering with a provided transfer function based on a direct form II -transpose structure
  
  Parameters:
@@ -591,7 +592,7 @@ void iirFilter(float *input, float *output, int seqLen, float gain, float *numCo
 	}
 }
 /*********************************************************************
- Function: LPC
+ Function: LPC()
  Performs linear predictive analysis on an audio segment for a desired order. The algorithm 
  works by computing the autocorrelation of the sequency followed by the Levinson Recursion to 
  computed the prediction coefficients.
@@ -660,7 +661,7 @@ int LPC(float *corrData, int audioLength, int order, float *lpCE){
 	return error;
 }
 /**********************************************************************************
- Function: rir 
+ Function: rir() 
  Generates a room impulse response for the specified room dimensions, speaker
  and microphone positions. An FIR represents the RIR
  
@@ -810,7 +811,9 @@ float* rir(int fs, float refCo, float mic[], float room[], float src[], int rirL
 
 /*********************************************************************
  Group: Spectral Features
- Function: bandwidth
+ 
+ Function: bandwidth()
+ 
  Computes the centroid on a frame-by-frame basis for a vector of sample data
 
  Parameters:
@@ -850,7 +853,8 @@ float bandwidth(float spectrum[], float freq[], float centroid, int winLength, i
 }
 /*********************************************************************
 
- Function: centroid
+ Function: centroid()
+ 
  Calculates the spectral centroid 
 
  Parameters:
@@ -882,7 +886,8 @@ float centroid(float spectrum[], float freq[], int winLength, int fs){
 	return centVal;
 }
 /*
-	Function: flux
+	Function: flux()
+	
 	Calculates the spectral flux.
 	
 	Parameters:
@@ -904,7 +909,8 @@ float flux(float spectrum[], float spectrumPrev[], int winLength){
 	return fluxVal;
 }
 /*********************************************************************
- Function: intensity
+ Function: intensity()
+ 
  Calculates the spectral energy
 
  Parameters:
@@ -927,7 +933,8 @@ float intensity(float spectrum[], int winLength){
 	return totalEnergy;
 }
 /*********************************************************************
- Function: rolloff
+ Function: rolloff()
+ 
  Calculates the spectral centroid 
 
  Parameters:
@@ -977,7 +984,7 @@ float rolloff(float spectrum[], int winLength, int fs){
 	return rollFreq;
 }
 /************************************************************************
-*	Function:  hannWindow
+*	Function:  hannWindow()
 *
 *	Parameters:		hann[] - An array that will contain the Hann coefficients.
 *					winLength - The number of coefficients to be calculated
@@ -994,7 +1001,7 @@ void hannWindow(float hann[], int winLength){
 
 }
 /************************************************************************
-*	Function:  nextPowerOf2
+*	Function:  nextPowerOf2()
 *
 *	Parameters:		number - The number to find the next highest power of two for.
 *
@@ -1015,7 +1022,7 @@ int nextPowerOf2(int number){
     return number;
 }
 /*******************************************************************************
- Function: polarToComplex
+ Function: polarToComplex()
  Converts polar numbers to complex numbers
  
  Parameters:
