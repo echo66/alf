@@ -2,6 +2,12 @@ Title: Release Notes
 
 Here are known issues for each version as well as the changes for each software iteration.
 
+About: Version 1.0.2
+
+*Updates*
+
+ * *Feature Values* - Fixed the issue of feature values returning incorrectly when reverb is in use.
+
 About: Version 1.0.1
 
 *Updates*
