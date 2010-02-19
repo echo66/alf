@@ -71,13 +71,17 @@ AudioChannel::~AudioChannel() {
 
 	free(inAudioFrame);
 	free(outAudioFrame);
+
 	free(freqData);
 	free(magSpectrum);
 	free(spectrumPrev);
 	free(hannCoefficients);
-	free(filter);		
+	free(filter);
+	
+	
 	free(fftFrame);
-	free(fftOut);	
+	free(fftOut);
+	
 	free(scratch);
 	free(twiddle);
 	free(invTwiddle);
@@ -89,10 +93,12 @@ AudioChannel::~AudioChannel() {
 	free(filterInvHalfTwiddle);
 	free(doubleTwiddle);
 	free(invDoubleTwiddle);
+
 	free(dataArray);
 	free(dataArrayOut);	
 	free(filterArray);
-	free(filterArrayOut);	
+	free(filterArrayOut);
+	
 	free(corrData);
 	free(corrDataOut);
 	
@@ -197,6 +203,8 @@ to the buffer sizes.
  
  */
 void AudioChannel::reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh) {
+
+	sprintf(out, "reInitializing Channel"); DISP(out);
 
 	fftSize = _fftSize;
 	hopSize = _hopSize;

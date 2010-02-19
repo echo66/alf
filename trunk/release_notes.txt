@@ -14,9 +14,10 @@ About: Version 1.0.1
 
 *Known Issues*
 
- * *Feature Values* - For a frame rate of 10fps *only*, the feature values returned are not verified as correct. They follow the same contour as that in the Matlab verification program but are not the same. Percent error as high as 100% is present. All other frame rates work properly.
+ * *Feature Values* - For a frame rate of 10fps *only* the feature values returned are not verified as correct. They follow the same contour as that in the Matlab verification program but are not the same. Percent error as high as 100% is present. All other frame rates work properly.
 
- * *Flux* - The flux value is not returned properly when reverb is in use.
+ * *Feature Values* - When reverb is on, feature values will not have one-to-one correspondence for some (higher) frame rates.  This is a result of the buffering necessary for processing reverb.  This will be fixed in the next version.
+
 
 About: Version 1.0
 
