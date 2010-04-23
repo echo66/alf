@@ -34,9 +34,6 @@ float abs_float(float input)
 
 	return retVal;
 }
-
-
-
 void max1D_float(float *input, int len, float *retVals)
 {
 	int i;
@@ -51,6 +48,34 @@ void max1D_float(float *input, int len, float *retVals)
 }
 
 
+void maxima1D_float(float *input, int length, int *maxima)
+{
+	int i, maxIndex1, maxIndex2;
+	float max = -INFINITY;
+	
+	for(i = 0; i<length;i++) {
+		if(input[i] >max) {
+			maxIndex2 = maxIndex1;
+			maxIndex1 = i;
+			max = input[i];
+		}
+	}
+	maxima[0] = maxIndex1;
+	maxima[1] = maxIndex2;	
+}
+
+
+int max1D_float(float *input, int length)
+{
+	int i, maxIndex, max = 0;
+	for(i = 0; i < length;i++) {
+		if(input[i] >max) {
+			maxIndex = i;
+			max = input[i];
+		}
+	}
+	return maxIndex;
+}
 void maxabs1D_float(float *input, int len, float *retVals)
 {
 	int i;
@@ -63,8 +88,6 @@ void maxabs1D_float(float *input, int len, float *retVals)
 		}
 	}
 }
-
-
 void max2D_float(float *input, int r, int c, float *retVals)
 {
 	int i,ind,len=r*c;
@@ -83,8 +106,6 @@ void max2D_float(float *input, int r, int c, float *retVals)
 	*retVals = floor(ind/c);
 	*(retVals+1) = ind % c;
 }
-
-
 void maxabs2D_float(float *input, int r, int c, float *retVals)
 {
 	int i,ind,len=r*c;
@@ -103,8 +124,6 @@ void maxabs2D_float(float *input, int r, int c, float *retVals)
 	*retVals = floor(ind/c);
 	*(retVals+1) = ind % c;
 }
-
-
 void max3D_float(float *input, int r, int c, int d, float *retVals)
 {
 	int i,ind,len=r*c*d;
@@ -125,8 +144,6 @@ void max3D_float(float *input, int r, int c, int d, float *retVals)
 	*(retVals+1) = (ind-((int)retVals[0] * r * c)) % c;
 	*(retVals+2) = floor(((ind-(*retVals * r * c))/c));
 }
-
-
 void maxabs3D_float(float *input, int r, int c, int d, float *retVals)
 {
 	int i,ind,len=r*c*d;
@@ -147,8 +164,6 @@ void maxabs3D_float(float *input, int r, int c, int d, float *retVals)
 	*(retVals+1) = (ind-((int)retVals[0] * r * c)) % c;
 	*(retVals+2) = floor(((ind-(*retVals * r * c))/c));
 }
-
-
 void meshgrid_float(float *x, float *y, float *z, float *outArr,int r, int c, int d)
 {
 	int i,j,k,offset;
@@ -172,7 +187,6 @@ void meshgrid_float(float *x, float *y, float *z, float *outArr,int r, int c, in
 		}
 	}
 }
-
 float round_float(float input)
 {
 	if(input < 0) {

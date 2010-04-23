@@ -13,7 +13,10 @@ g++ CircularBuffer.cpp -c -o CircularBuffer.o
 g++ DSPFunctions.c -c -o DSPFunctions.o;
 g++ MathDoubleFuncs.c -c -o MathDoubleFuncs.o;
 g++ MathFloatFuncs.c -c -o MathFloatFuncs.o;
-g++ AudioChannel.o CircularBuffer.o ALFpackage.o DSPFunctions.o MathDoubleFuncs.o MathFloatFuncs.o -O3 -Wall -swc -o ALFPackage.swc;
+g++ FFT.cpp -c -o FFT.o;
+g++ PhaseVocoder.cpp -c -o PhaseVocoder.o;
+g++ BeatTracker.cpp -c -o BeatTracker.o;
+g++ AudioChannel.o CircularBuffer.o ALFpackage.o DSPFunctions.o MathDoubleFuncs.o MathFloatFuncs.o FFT.o PhaseVocoder.o BeatTracker.o -O3 -Wall -swc -o ALFPackage.swc;
 
 echo Done!
 echo
@@ -32,6 +35,9 @@ rm CircularBuffer.o
 rm DSPFunctions.o
 rm MathDoubleFuncs.o
 rm MathFloatFuncs.o
+rm FFT.o
+rm PhaseVocoder.o
+rm BeatTracker.o
 
 echo Done!
 echo
