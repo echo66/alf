@@ -17,7 +17,8 @@
 #ifndef MATHFLOATFUNCS_H
 #define MATHFLOATFUNCS_H
 
-
+void maxima1D_float(float *input, int length, int *maxima);
+int max1D_float(float *input, int length);
 extern float abs_float(float input);
 extern void max1D_float(float *input, int len, float *retVals);
 extern void maxabs1D_float(float *input, int len, float *retVals);

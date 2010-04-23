@@ -1,5 +1,5 @@
 /*
- Copyright 2009 Music and Entertainment Technology Laboratory - Drexel University
+ Copyright 2010 Music and Entertainment Technology Laboratory - Drexel University
  
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@
 #include <sys/time.h>;
 #include "AudioChannel.h";
 #include "CircularBuffer.h";
+#include "PhaseVocoder.h";
 #include "AS3.h";
 
 
@@ -35,6 +36,9 @@ char out[200];
  input and output audio streams. Data that is reused from frame to frame (e.g. filter coefficients) is stored in this class and is
  accessible in <ALFPackage.cpp> for use with the DSP functions contained in <DSPFunctions.c>.
 */	
+
+// MARK: -
+// MARK: Initialization
 
 /*
  Group: Constructor
@@ -65,40 +69,28 @@ AudioChannel::AudioChannel(){
 	filterLen = 0;  
 	filterProcessing = 0;
 	filterFFTSize = 0;
+	vocoder = NULL;
 	
 }
 AudioChannel::~AudioChannel() {
 
 	free(inAudioFrame);
 	free(outAudioFrame);
-
 	free(freqData);
 	free(magSpectrum);
 	free(spectrumPrev);
 	free(hannCoefficients);
 	free(filter);
-	
-	
+	free(userFilterFIR);
+	free(userFilterIIR);
+	free(inputIIR);
+	free(outputIIR);	
 	free(fftFrame);
-	free(fftOut);
-	
-	free(scratch);
-	free(twiddle);
-	free(invTwiddle);
-	free(halfTwiddle);
-	free(invHalfTwiddle);
-	free(filterTwiddle);
-	free(filterInvTwiddle);
-	free(filterHalfTwiddle);
-	free(filterInvHalfTwiddle);
-	free(doubleTwiddle);
-	free(invDoubleTwiddle);
-
+	free(fftOut);	
 	free(dataArray);
 	free(dataArrayOut);	
 	free(filterArray);
 	free(filterArrayOut);
-	
 	free(corrData);
 	free(corrDataOut);
 	
@@ -107,6 +99,9 @@ AudioChannel::~AudioChannel() {
 	delete [] micPosition;
 	delete [] inBuffer;
 	delete [] outBuffer;
+	
+	//added for vocoder
+	delete [] vocoder;
 }
 /* 
  Function: initChannel()
@@ -120,40 +115,40 @@ AudioChannel::~AudioChannel() {
 	hopSize - The desired size of the analysis frame, as selected by the user from ALF or DATF.
 	fftSize - the size of the FFT to be computed on each frame when using spectral analysis fucntions.
 	fs - The audio sampling rate of the user-selected audio
+	lookAheadFrames - The number of frames to calculate features on before beginning playback. For example, entering a value of
+					  twenty will cause zeros to be returned as the audio output for the first 20 frames, while the feature 
+					  values of the first twenty.
  
  */
-void AudioChannel::initChannel(int _hopSize, int _fftSize, int _fs) {
+void AudioChannel::initChannel(int _hopSize, int _fftSize, int _fs, int _lookAheadFrames) {
 
+	// Save parameters
 	fftSize = _fftSize;
 	hopSize = _hopSize;
 	fs = _fs;
+	lookAheadFrames = _lookAheadFrames;
+	
 	if(hopSize < 2048){ audioOutputSize = 2*hopSize;} // = 2048 b/c this is the least # of samples flash can play at once
 	else{ audioOutputSize = hopSize; }	
 	
 	// Audio pointers shared with AS
-	inAudioFrame = (float*) malloc(sizeof(float)*(fftSize + 2));		// We initialize this to be 2 larger for the weird fftPacking thing
+	inAudioFrame = (float*) malloc(sizeof(float)*(fftSize*2));			// We initialize this to be 2 larger for the weird fftPacking thing
 	outAudioFrame = (float*) malloc(sizeof(float)*4096);				// Maxsamplesize is the max number of samples flash can playback
 
 	// Allocates our input circular buffer 
-	int buffSize = 30000;
+	int buffSize = 100000;
 	inBuffer = new CircularBuffer[1];
 	inBuffer->initBuffer(buffSize);
 	
 	// Allocates our output circular buffer 
-	buffSize = 30000;
+	buffSize = 100000;
 	outBuffer = new CircularBuffer[1];
 	outBuffer->initBuffer(buffSize);
 	
 	// FFT
 	fftFrame = (float*) malloc(sizeof(float)*(fftSize*2));
 	fftOut = (float*) malloc(sizeof(float)*(fftSize*2));
-	scratch = (float*) malloc(sizeof(float)*(fftSize*4));
-	twiddle = (float*) malloc(sizeof(float)*(fftSize));
-	invTwiddle = (float*) malloc(sizeof(float)*(fftSize));
-	halfTwiddle = (float*) malloc(sizeof(float)*(fftSize/2));
-	invHalfTwiddle = (float*) malloc(sizeof(float)*(fftSize/2));
-	hannCoefficients = (float *) calloc(fftSize, sizeof(float));
-	
+	hannCoefficients = (float *) calloc(fftSize, sizeof(float));	
 		
 	// Features				
 	freqData = (float*) malloc(sizeof(float)*(fftSize/2 + 1));			// Number of unique frequencies in the specific fftLength
@@ -161,27 +156,28 @@ void AudioChannel::initChannel(int _hopSize, int _fftSize, int _fs) {
 	spectrumPrev = (float *) calloc((fftSize/2 + 1),sizeof(float));
 	
 	// Filtering
-	filterTwiddle = (float *) calloc(16384, sizeof(float));
-	filterInvTwiddle = (float *) calloc(16384, sizeof(float));
-	filterHalfTwiddle = (float *) calloc(8192, sizeof(float));
-	filterInvHalfTwiddle = (float *) calloc(8192, sizeof(float));
 	dataArray = (float *) calloc(32768, sizeof(float));
 	dataArrayOut = (float *) calloc(32768, sizeof(float));
 	filterArray = (float *) calloc(32768, sizeof(float));
-	filterArrayOut = (float *) calloc(32768, sizeof(float));			
+	filterArrayOut = (float *) calloc(32768, sizeof(float));	
+	userFilterFIR = (float *) calloc(2048, sizeof(float));	
+	userFilterIIR = (float *) calloc(2048, sizeof(float));	
+	inputIIR = (float *) calloc(4096, sizeof(float));	
+	outputIIR = (float *) calloc(4096, sizeof(float));	
 	filterLen = 0;
 	
 	// Correlation
 	corrData = (float * ) calloc((fftSize*4), sizeof(float));
 	corrDataOut = (float * ) calloc((fftSize*4), sizeof(float));
-	doubleTwiddle = (float*) calloc((fftSize*2), sizeof(float));
-	invDoubleTwiddle = (float*) calloc((fftSize*2), sizeof(float));	
 		
 	roomSize = new float[3];
 	sourcePosition = new float[3];
 	micPosition = new float[3];
 	
 	// Initialize flags/values		
+	if(lookAheadFrames > 0) {LOOK_AHEAD = true;} 
+	else { LOOK_AHEAD = false;}
+	frameNumber = 0;
 	inAudioFrameSamples = 0;
 	outAudioFrameSamples = 0;
 	circularBufferFlag = false;
@@ -200,15 +196,18 @@ to the buffer sizes.
 	hopSize - The desired size of the analysis frame, as selected by the user from ALF or DATF.
 	fftSize - the size of the FFT to be computed on each frame when using spectral analysis fucntions.
 	fs - The audio sampling rate of the user-selected audio
+	lookAheadFrames - The number of frames to calculate features on before beginning playback.	
  
  */
-void AudioChannel::reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh) {
+void AudioChannel::reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh, int _lookAheadFrames) {
 
 	sprintf(out, "reInitializing Channel"); DISP(out);
-
+	
+	// Save parameters
 	fftSize = _fftSize;
 	hopSize = _hopSize;
 	fs = _fs;
+	lookAheadFrames = _lookAheadFrames;
 	
 	if(hopSize < 2048){ audioOutputSize = 2*hopSize;} // = 2048 b/c this is the least # of samples flash can play at once
 	else{ audioOutputSize = hopSize; }	
@@ -217,14 +216,11 @@ void AudioChannel::reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh)
 
 	// Audio buffers
 	free(inAudioFrame);
-	inAudioFrame = (float *) calloc(2*hopSize, sizeof(float));
+	inAudioFrame = (float *) calloc(2*fftSize, sizeof(float));
 
 	// FFT
 	fftFrame = (float *)realloc(fftFrame, sizeof(float)*(fftSize*2));
 	fftOut = (float *)realloc(fftOut, sizeof(float)*(fftSize*2));
-	scratch = (float *)realloc(scratch, sizeof(float)*(fftSize*4));
-	twiddle = (float*) realloc(twiddle, sizeof(float)*(fftSize));
-	invTwiddle = (float*) realloc(invTwiddle, sizeof(float)*(fftSize));	
 
 	// Features
 	freqData = (float *)realloc(freqData, sizeof(float)*(fftSize/2 + 1));
@@ -236,9 +232,7 @@ void AudioChannel::reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh)
 
 	// Correlation
 	corrData = (float *) realloc(corrData, (fftSize*4)*sizeof(float));
-	corrDataOut = (float *) realloc(corrDataOut, (fftSize*4)*sizeof(float));
-	doubleTwiddle = (float*) realloc(doubleTwiddle, sizeof(float)*(fftSize*2));
-	invDoubleTwiddle = (float*) realloc(invDoubleTwiddle, sizeof(float)*(fftSize*2));		
+	corrDataOut = (float *) realloc(corrDataOut, (fftSize*4)*sizeof(float));	
 		
 	// Clear previous spectrum array
 	int i;
@@ -254,12 +248,40 @@ void AudioChannel::reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh)
 	if(numCh == 1){stereo = false;}
 	else if(numCh == 2){stereo = true;}
 	else{sprintf(out, "Only Mono and Stereo files are supported!"); DISP(out);}
+	
+	// Set look ahead values
+	if(lookAheadFrames > 0) {LOOK_AHEAD = true;} 
+	else { LOOK_AHEAD = false;}
+	frameNumber = 0;	
 
 	clearInAudioFrame();
 
 }
 
-
+/*
+ Function: initChannelVocoder
+ 
+ This function initializes a vocoder object for the AudioChanenl when needed for the vocoding function
+ 
+ Parameters:
+	*none: this function uses internal class parameters.
+ 
+ 
+*/
+void AudioChannel::initChannelVocoder(int frameOverlap) {
+	
+	//declare the object an initialize it....warning, the overlap of 2 is hard coded, but that will
+	//change inthe future. we'll need to know the overlap as a property of the AudioChannel Class
+	//it bumps up the vocoder size to 4096 for better frequency resolutioin
+	
+	vocoder = new PhaseVocoder[1];
+	int vocoderFFTSize = fftSize;
+	if(vocoderFFTSize < 8192) { vocoderFFTSize = 8192;}
+	else { vocoderFFTSize = fftSize; }
+	vocoder->initVocoder(vocoderFFTSize, frameOverlap, fs);
+}
+// MARK: -
+// MARK: Utilities
 /*
  Group: Utilities
 
@@ -310,7 +332,6 @@ bool AudioChannel::checkRoom(	float newRoomLength, float newRoomWidth, float new
 	}
 	return newRoom;
 }
-
 /* 
  Function: clearFFTFrame()
  
@@ -329,7 +350,12 @@ void AudioChannel::clearFFTFrame(){
 	for(i = 0; i < 32768; i++){ 
 		dataArray[i] = 0;
 		filterArray[i] = 0;
-	}	
+	}
+	for(i = 0; i < 4096; i++){ 
+		inputIIR[i] = 0;
+		outputIIR[i] = 0;
+	}		
+	
 }
 /*
  Function: clearInAudioFrame()
@@ -375,9 +401,11 @@ void AudioChannel::resetChannel(){
 	firstFrame = true;
 	stereo = false;
 	bufferReady = false;
+	frameNumber = 0;
 }
 
-
+// MARK: -
+// MARK: GET/SET
 /*
  Group: Get Functions
 
@@ -551,7 +579,8 @@ void AudioChannel::setRoom(	float newRoomLength, float newRoomWidth, float newRo
 
 }
 
-
+// MARK: -
+// MARK: Flags
 /*
 	Group: Flag Management
 	
@@ -708,10 +737,6 @@ void AudioChannel::setMagFlag(bool flagVal) {magFlag = flagVal;}
 	
 	spectrumPrev -	An array containing the previous frame's magnitude spectrum. This is required for the spectral
 					flux algorithm.		
-	
-	Twiddle Factors - twiddle, invTwiddle, halfTwiddle, invHalfTwiddle, filterTwiddle, filterInvTwiddle, filterHalfTwiddle, filterInvHalfTwiddle, 
-						doubleTwiddle, invDoubleTwiddle. These arrays contain the various twiddle factors and inverse twiddle factors for various 
-						functions that use different FFT sizes.
 	
 	Filtering:
 	

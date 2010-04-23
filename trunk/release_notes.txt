@@ -2,6 +2,11 @@ Title: Release Notes
 
 Here are known issues for each version as well as the changes for each software iteration.
 
+About: Version 1.0.3
+
+*Updates*
+ * *Added Algorithms* - Phase vocoding and beat tracking added to the functions available in ALF.
+
 About: Version 1.0.2
 
 *Updates*

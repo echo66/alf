@@ -61,7 +61,7 @@ void CircularBuffer::addBuffer(float input, int overlap) {
 	buffArray[writePtr] = buffArray[writePtr] + input/(float)overlap;
 	
 	if(fabs(buffArray[writePtr]) >= 1.0) {
-		sprintf(output, "clipping detected at index %i! \n", writePtr); DISP(output);
+		//sprintf(output, "clipping detected at index %i! \n", writePtr); DISP(output);
 	}
 	if(writePtr ==  endPtr) {
 		writePtr = 0;

@@ -1,5 +1,5 @@
 /*
- Copyright 2009 Music and Entertainment Technology Laboratory - Drexel University
+ Copyright 2010 Music and Entertainment Technology Laboratory - Drexel University
  
  Licensed under the Apache License, Version 2.0 (the "License");
  you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 #ifndef AUDIOCHANNEL_H_
 #define AUDIOCHANNEL_H_
 #include "CircularBuffer.h";
+#include "PhaseVocoder.h";
 
 class AudioChannel {
 
@@ -29,12 +30,16 @@ private:
 	float centroidVal;
 	
 public:
+
+	// Con/Destructors
 	AudioChannel();	
 	~AudioChannel();
 	
 	//Init Method
-	void initChannel(int fSize, int fftSize, int sampleRate);
-	void reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh);
+	void initChannel(int fSize, int fftSize, int sampleRate, int lookAheadFrames);
+	void reInitChannel(int _hopSize, int _fftSize, int _fs, int numCh, int lookAheadFrames);
+	
+	void initChannelVocoder(int frameOverlap);
 	
 	//Clean/Clear methods
 	void clearInAudioFrame();
@@ -73,27 +78,28 @@ public:
 	bool getCircularBufferFlag();
 	
 	//Other members
-	bool firstFrame, bufferReady, stereo, newRoom;
+	bool firstFrame, bufferReady, stereo, newRoom, LOOK_AHEAD;
 	char *channelName;
-	int inAudioFrameSamples, outAudioFrameSamples;
+	int inAudioFrameSamples, outAudioFrameSamples, lookAheadFrames, frameNumber;
 	
 	//Storage Data
-	float *fftFrame, *fftOut, *freqData, *magSpectrum, *twiddle, *invTwiddle, *halfTwiddle, *invHalfTwiddle, *scratch;
+	float *fftFrame, *fftOut, *freqData, *magSpectrum;
 	float *spectrumPrev, *hannCoefficients, *inAudioFrame, *outAudioFrame;
 	float *roomSize, *sourcePosition, *micPosition;
-	float **inRefPtr, outRefPtr; 
 	
 	//Circular Buffers
 	CircularBuffer *outBuffer, *inBuffer;
 		
 	// Filtering arrays/vars
-	float* filter, *filterTwiddle, *filterInvTwiddle, *filterHalfTwiddle, *filterInvHalfTwiddle;	
-	float *dataArray, *dataArrayOut,  *filterArray, *filterArrayOut;					
+	float *filter, *dataArray, *dataArrayOut,  *filterArray, *filterArrayOut, *userFilterFIR, *userFilterIIR, *inputIIR, *outputIIR;					
 	int filterLen, filterFFTSize;					
 	int filterProcessing;
 	
 	// Correlation
-	float *corrData, *corrDataOut, *doubleTwiddle, *invDoubleTwiddle;
+	float *corrData, *corrDataOut;
+	
+	//Phase Vocoder
+	PhaseVocoder *vocoder;
 };
 
 #endif
