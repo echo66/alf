@@ -90,6 +90,7 @@ AS3_Val getCentroid(void *self, AS3_Val args);
 AS3_Val getIntensity(void *self, AS3_Val args);
 AS3_Val getRolloff(void *self, AS3_Val args);
 AS3_Val getBandwidth(void *self, AS3_Val args);
+AS3_Val getPitch(void *self, AS3_Val args);
 AS3_Val getLPC(void *self, AS3_Val args);
 AS3_Val getHarmonics(void *self, AS3_Val args);
 AS3_Val addReverb(void *self, AS3_Val args);
@@ -102,7 +103,6 @@ AS3_Val checkInputBuffer(void *self, AS3_Val args);
 AS3_Val reInitializeChannel(void* self, AS3_Val args);
 AS3_Val getInAudioPtr(void *self, AS3_Val args);
 AS3_Val setFirstFrame(void *self, AS3_Val args);
-
 AS3_Val vocodeChannel(void *self, AS3_Val args);
 AS3_Val filterAudioFIR(void *self, AS3_Val args);
 AS3_Val filterAudioIIR(void *self, AS3_Val args);
@@ -209,9 +209,6 @@ AS3_Val initAudioChannel(void *self, AS3_Val args) {
 	// Set frame size 
 	frameSize = 2*hopSize;
 		
-	//sprintf(outStr, "lookAhead = %i", lookAhead); DISP(outStr);
-	//sprintf(outStr, "hop = %i frame = %i", hopSize, frameSize); DISP(outStr);
-		
 	if(strcmp(channelType,"leftCh") == 0) {
 	
 		// Create the left AudioChannel
@@ -230,6 +227,8 @@ AS3_Val initAudioChannel(void *self, AS3_Val args) {
 
 		char name[] = "left";
 		chPtr->setChannelName(name);
+
+		if(DEBUG){sprintf(outStr, "lookAhead = %i\nhop = %i\nframe = %i\nnfft=%i\n", lookAhead, hopSize, frameSize, leftCh->getFFTSize()); DISP(outStr);}
 
 	} else if(strcmp(channelType,"rightCh") == 0) {
 						
@@ -252,7 +251,9 @@ AS3_Val initAudioChannel(void *self, AS3_Val args) {
 
 		// Since we only have a right channel if stereo audio is used, also set left channel
 		chPtr->stereo = true;	
-		leftCh->stereo = true;																
+		leftCh->stereo = true;				
+
+		if(DEBUG){sprintf(outStr, "lookAhead = %i\nhop = %i\nframe = %i\nnfft=%i\n", lookAhead, hopSize, frameSize, rightCh->getFFTSize()); DISP(outStr);}												
 
 	} else {sprintf(outStr, "INVALID AUDIO CHANNEL SPECIFIED \n"); DISP(outStr);}
 	
@@ -929,11 +930,18 @@ AS3_Val getHarmonics(void *self, AS3_Val args) {
 	// Some input checking to make sure the user is asking for legitimate values
 	if(reqHarms <= 0 ) { reqHarms = 10;} 
 	else if (reqHarms > (fftSize)/2 + 1) { reqHarms = (fftSize)/2 + 1;}
-	else {}
+	else {
+		sprintf(outStr, "Invalid number of harmonics\n"); DISP(outStr);
+	}
 
 	// This zero pads the correlation data frame so an FFT can be calculated
 	chPtr->clearCorrFrame();
 	
+	// Copy data to autocorrelation buffer
+	for(i = 0; i < fftSize; i++){
+		chPtr->corrData[i] = chPtr->fftFrame[i];
+	}	
+
 	computeFFT(chPtr->corrData, chPtr->corrDataOut, 2*fftSize);		// FFT
 	autoCorr(chPtr->corrDataOut, 2*fftSize);						// Compute the autocorrelation of the sequence
 	computeIFFT(chPtr->corrDataOut, chPtr->corrData, 2*fftSize); 	// IFFT
@@ -969,16 +977,28 @@ AS3_Val getHarmonics(void *self, AS3_Val args) {
 
 		// Get the magnitude response of IR
 		magSpectrum(input, resp, fftSize, 1);
-		
+
 		// Compute FFT of current frame of audio
 		if(!chPtr->getFFTFlag()){ computeFFT(chPtr); }
 		
 		// Obtain the magnitude spectrumm with dB's here
 		magSpectrum(chPtr->fftOut, chPtr->magSpectrum, fftSize, 1);
-		
+
 		// Vars for finding the max peak
 		float alpha, beta, gamma, p;
-		
+
+
+		if(chPtr->frameNumber == 30){
+			sprintf(outStr, "MAGNITUDE SPECTRUM"); DISP(outStr);
+			for(i = 1; i < (fftSize)/2; i++) {
+				sprintf(outStr, "%f", chPtr->magSpectrum[i]); DISP(outStr);
+			}
+			sprintf(outStr, "LPC FILTER RESPONSE"); DISP(outStr);
+			for(i = 1; i < (fftSize)/2; i++) {
+				sprintf(outStr, "%f", resp[i]); DISP(outStr);
+			}			
+		}
+
 		// Peak finding algorithm
 		for(i = 1; i < (fftSize)/2; i++) {
 			// Detect region with candidate peak (s)
@@ -1176,6 +1196,77 @@ AS3_Val getMagSpec(void *self, AS3_Val args){
 	// Return a magPtr so we can read the values in AS if we wish to access them
 	return AS3_Ptr(magPtr);
 	}
+
+/*
+    Function: getPitch
+ 
+    This function estimates the frequency of the audio frame by computing its autocorrelation sequency
+    and searching for a global maximum value in the result. Method assumes that the FFT has been computed
+    prior.
+ 
+    Parameters:
+        *chPtr - A pointer to the audio channel with the frame(s) of interest
+ 
+    Returns:
+ 
+        pitch -the estimated pitch value
+ 
+    See Also:
+        <DSPFunctions.c->autoCorr>
+ */
+
+AS3_Val getPitch(void *self, AS3_Val args) {
+    
+    // Initializations
+    //
+    AudioChannel *chPtr;
+    int fftSize     = chPtr->getFFTSize();
+    int error       = 0;
+    int i;
+    
+    // parse the inputs to get the correct channel Pointer
+    AS3_ArrayValue(args, "IntType", &chPtr);
+    
+    // Clear the frame that holds the autocorrelation data
+    chPtr->clearCorrFrame();
+    
+    //Now copy the data from the audio frame into the correlation frame we just cleared
+    
+    for(i = 0; i < fftSize; i++){
+		chPtr->corrData[i] = chPtr->fftFrame[i];
+	}
+    
+    // compute the FFT on the correlation data
+    computeFFT(chPtr->corrData, chPtr->corrDataOut, 2*fftSize);		// FFT
+	autoCorr(chPtr->corrDataOut, 2*fftSize);						// autocorr multiplies FFT by its complex conjugate
+	computeIFFT(chPtr->corrDataOut, chPtr->corrData, 2*fftSize); 	// IFFT returns the sequence
+    
+    //now search for the maximum value in the symmetric part of the autocorrelation sequence
+    
+    float   globalMax = -1000;
+    int     maxInd = 0;         // this is the lag value that we want to determine
+    
+    for(i = 1; i < fftSize - 1; i++) {
+        
+        //begin by looking for local maximum and seeing if its a global maximum
+        if(chPtr->corrData[i] > chPtr->corrData[i-1] && chPtr->corrData[i] > chPtr->corrData[i+1]){
+            //we have a local maxima, lets see if its larger than the global
+            if(chPtr->corrData[i] > globalMax) {
+                globalMax = chPtr->corrData[i];
+                maxInd = i;
+            }
+        }
+    }
+    
+    //Now we want to compute the pitch
+    // Pitch = sampleRate/lag
+    float pitch = 0;
+    pitch = (float)(chPtr->getSampleRate())/(float)maxInd;
+    
+    return AS3_Number(pitch);
+    
+}
+
 /*
 	Function: getRolloff
 	
@@ -1824,7 +1915,7 @@ void computeCentroid(AudioChannel *ch) {
 //entry point for code
 int main() {
 
-	fft256 = new FFT[1];	fft256->initFFT(256);		fft256->computeTwiddles();
+	fft256 = new FFT[1];	fft256->initFFT(256);	fft256->computeTwiddles();
 	fft1024 = new FFT[1];	fft1024->initFFT(1024);	fft1024->computeTwiddles();
 	fft2048 = new FFT[1];	fft2048->initFFT(2048);	fft2048->computeTwiddles();
 	fft4096 = new FFT[1];	fft4096->initFFT(4096);	fft4096->computeTwiddles();
@@ -1843,6 +1934,7 @@ int main() {
 	AS3_Val getFFTSizeMethod = AS3_Function(NULL, getFFTSize);
 	AS3_Val getIntensityMethod = AS3_Function(NULL, getIntensity);
 	AS3_Val getRolloffMethod = AS3_Function(NULL, getRolloff);
+    AS3_Val getPitchMethod = AS3_Function(NULL, getPitch);	
 	AS3_Val getBandwidthMethod = AS3_Function(NULL, getBandwidth);
 	AS3_Val getLPCMethod = AS3_Function(NULL, getLPC);
 	AS3_Val getHarmonicsMethod = AS3_Function(NULL, getHarmonics);
@@ -1854,8 +1946,7 @@ int main() {
 	AS3_Val checkInputBufferMethod = AS3_Function(NULL, checkInputBuffer);
 	AS3_Val reInitializeMethod = AS3_Function(NULL, reInitializeChannel);	
 	AS3_Val getInAudioPtrMethod = AS3_Function(NULL, getInAudioPtr);	
-	AS3_Val setFirstFrameMethod = AS3_Function(NULL, setFirstFrame);
-	
+	AS3_Val setFirstFrameMethod = AS3_Function(NULL, setFirstFrame);	
 	AS3_Val vocodeChannelMethod = AS3_Function(NULL, vocodeChannel);
 	AS3_Val filterAudioFIRMethod = AS3_Function(NULL, filterAudioFIR);
 	AS3_Val filterAudioIIRMethod = AS3_Function(NULL, filterAudioIIR);
@@ -1875,6 +1966,7 @@ int main() {
 	AS3_SetS(result, "getFFTSizeC", getFFTSizeMethod);
 	AS3_SetS(result, "getIntensityC", getIntensityMethod);
 	AS3_SetS(result, "getRolloffC", getRolloffMethod);
+	AS3_SetS(result, "getPitchC", getPitchMethod);		
 	AS3_SetS(result, "getBandwidthC", getBandwidthMethod);
 	AS3_SetS(result, "getLPCC", getLPCMethod);
 	AS3_SetS(result, "getHarmonicsC", getHarmonicsMethod);
@@ -1885,8 +1977,7 @@ int main() {
 	AS3_SetS(result, "resetAllC", resetAllMethod);
 	AS3_SetS(result, "reInitializeChannelC", reInitializeMethod);
 	AS3_SetS(result, "getInAudioPtrC", getInAudioPtrMethod);
-	AS3_SetS(result, "setFirstFrameC", setFirstFrameMethod);
-	
+	AS3_SetS(result, "setFirstFrameC", setFirstFrameMethod);    
 	AS3_SetS(result, "vocodeChannelC", vocodeChannelMethod);
 	AS3_SetS(result, "filterAudioFIRC", filterAudioFIRMethod);
 	AS3_SetS(result, "filterAudioIIRC", filterAudioIIRMethod);
@@ -1905,6 +1996,7 @@ int main() {
 	AS3_Release(getFluxMethod);
 	AS3_Release(getIntensityMethod);
 	AS3_Release(getRolloffMethod);
+	AS3_Release(getPitchMethod);		
 	AS3_Release(getBandwidthMethod);
 	AS3_Release(getLPCMethod);
 	AS3_Release(getHarmonicsMethod);
@@ -1916,7 +2008,6 @@ int main() {
 	AS3_Release(reInitializeMethod);
 	AS3_Release(getInAudioPtrMethod);	
 	AS3_Release(setFirstFrameMethod);
-	
 	AS3_Release(vocodeChannelMethod);
 	AS3_Release(filterAudioFIRMethod);
 	AS3_Release(filterAudioIIRMethod);
