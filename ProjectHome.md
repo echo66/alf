@@ -1,0 +1,2 @@
+## Audio processing Library for Flash (ALF) ##
+The ALF is a library intended for Adobe Flash/AIR developers who want to create audio/music centric games and other programs. ALF provides audio processing functions like reverb and filtering as well as audio features like brightness and intensity within a parameterized framework for dynamic audio (streaming) playback. The library functions in real-time so deploying innovative audio applications for the web has never been easier with Actionscript/Flash. Learn more at http://music.ece.drexel.edu
